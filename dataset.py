@@ -1,12 +1,12 @@
 import numpy as np
 import PIL
 import re
-import csv
 import torch
 import torch.utils.data
 import random
 from fashion_words import single_words, combinations, colors, items, material, pattern, functionalities, silhouettes, \
     structures, details, season, style, general
+from dataset_utils import extract_siblings_per_category
 
 
 class BaseDataset(torch.utils.data.Dataset):
@@ -186,6 +186,7 @@ class Fashion200k(BaseDataset):
                             attribute2category[w] = "style"
                         elif w in general:
                             attribute2category[w] = "general"
+                img["captions"] = [c]
                 if c not in caption2id:
                     id2caption[len(caption2id)] = c
                     caption2id[c] = len(caption2id)
@@ -193,11 +194,13 @@ class Fashion200k(BaseDataset):
                 caption2imgids[c].append(i)
         self.caption2imgids = caption2imgids
         self.attribute2category = attribute2category
+        self.id2caption = id2caption
+        self.caption2id = caption2id
 
         # parent captions are 1-word shorter than their children
         parent2children_captions = {}
         parent2different_words = {}
-        for c in caption2id.keys():
+        for c, i in caption2id.items():
             for w in c.split():
                 p = c.replace(w, "")
                 p = p.replace("  ", " ").strip()
@@ -210,18 +213,22 @@ class Fashion200k(BaseDataset):
                     parent2different_words[p] = dict()
                 if category not in parent2different_words[p]:
                     parent2different_words[p][category] = []
-                if w not in parent2different_words[p][category]:
-                    parent2different_words[p][category].append(w)
+                if w not in [t[0] for t in parent2different_words[p][category]]:
+                    parent2different_words[p][category].append((w, i))
+
         self.parent2children_captions = parent2children_captions
         self.parent2different_words = parent2different_words
-
-        # export csv files per category
-        categories = ["color", "item", "material", "pattern", "functionality", "silhouette", "structure", "detail",
-                      "style", "season", "general"]
-
-        for cat in categories:
-            words_dict = extract_siblings_per_category(parent2different_words, cat)
-            export_siblings_per_category(words_dict, cat)
+        self.parent2different_colors = extract_siblings_per_category(parent2different_words, "color")
+        self.parent2different_items = extract_siblings_per_category(parent2different_words, "item")
+        self.parent2different_materials = extract_siblings_per_category(parent2different_words, "material")
+        self.parent2different_pattern = extract_siblings_per_category(parent2different_words, "pattern")
+        self.parent2different_functionalities = extract_siblings_per_category(parent2different_words, "functionality")
+        self.parent2different_silhouettes = extract_siblings_per_category(parent2different_words, "silhouette")
+        self.parent2different_structures = extract_siblings_per_category(parent2different_words, "structure")
+        self.parent2different_details = extract_siblings_per_category(parent2different_words, "detail")
+        self.parent2different_season = extract_siblings_per_category(parent2different_words, "season")
+        self.parent2different_style = extract_siblings_per_category(parent2different_words, "style")
+        self.parent2different_general = extract_siblings_per_category(parent2different_words, "general")
 
         # identify parent captions for each image
         for img in self.imgs:
@@ -293,29 +300,7 @@ class Fashion200k(BaseDataset):
             img = self.transform(img)
         return img
 
+    def get_caption(self, caption_idx):
+        caption = self.id2caption[caption_idx]
+        return caption
 
-def extract_siblings_per_category(words_dict, category):
-    filtered_words_dict = {parent: value[category] for parent, value in words_dict.items() if category in value}
-    return filtered_words_dict
-
-
-def export_siblings_per_category(words_dict, category):
-    csv_file_name = f"parent2different_words_{category}.csv"
-
-    with open(csv_file_name, mode='w', newline='', encoding='utf-8-sig') as f:
-
-        writer = csv.writer(f)
-
-        # 먼저 헤더 작성 (key + value1,value2,... 는 value 길이에 따라 달라지므로 max 길이 구함)
-        max_values_len = max(len(v) for v in words_dict.values())
-
-        # 헤더 구성
-        header = ['key'] + [f'value{i + 1}' for i in range(max_values_len)]
-        writer.writerow(header)
-
-        # 내용 작성
-        for key, values in words_dict.items():
-            if len(values) >= 2:  # 👈 여기 조건 추가 (value가 2개 이상일 때만 추가)
-                row = [key] + values
-                row += [''] * (max_values_len - len(values))
-                writer.writerow(row)
