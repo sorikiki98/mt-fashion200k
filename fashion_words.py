@@ -417,7 +417,6 @@ single_words = {
     'zip-trim': 'zipped',
     'wrapover': 'wrap',
     '2-piece': 'two-piece',
-    'top': 't-shirt',
     'daisy': 'floral',
 }
 
@@ -686,7 +685,6 @@ items = [
     'sweatshirt',
     'tank',
     'tights',
-    'top',
     'topper',
     'trackpants',
     'treggings',
@@ -1098,7 +1096,6 @@ structures = [
     'elbow-sleeve',
     'floor-length',
     'flutter-sleeve',
-    'front',
     'front-zip',
     'full',
     'full-length',

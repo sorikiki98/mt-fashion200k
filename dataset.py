@@ -1,5 +1,5 @@
 import numpy as np
-import PIL
+from PIL import Image
 import re
 import torch
 import torch.utils.data
@@ -90,11 +90,7 @@ class Fashion200k(BaseDataset):
                 self.imgs += [img]
         print("Fashion200k:", len(self.imgs), "images")
 
-        # generate query for training or testing
-        if split == "train":
-            self.caption_index_init_()
-        else:
-            self.generate_test_queries_()
+        self.caption_index_init_()
 
     def get_different_word(self, source_caption, target_caption):
         source_words = source_caption.split()
@@ -220,7 +216,7 @@ class Fashion200k(BaseDataset):
         self.parent2different_words = parent2different_words
         self.parent2different_colors = extract_siblings_per_category(parent2different_words, "color")
         self.parent2different_items = extract_siblings_per_category(parent2different_words, "item")
-        self.parent2different_materials = extract_siblings_per_category(parent2different_words, "material")
+        self.parent2different_material = extract_siblings_per_category(parent2different_words, "material")
         self.parent2different_pattern = extract_siblings_per_category(parent2different_words, "pattern")
         self.parent2different_functionalities = extract_siblings_per_category(parent2different_words, "functionality")
         self.parent2different_silhouettes = extract_siblings_per_category(parent2different_words, "silhouette")
@@ -292,8 +288,9 @@ class Fashion200k(BaseDataset):
     def get_img(self, idx, raw_img=False):
         img_path = self.img_path + self.imgs[idx]["file_path"]
         with open(img_path, "rb") as f:
-            img = PIL.Image.open(f)
+            img = Image.open(f)
             img = img.convert("RGB")
+            img.show()
         if raw_img:
             return img
         if self.transform:
@@ -303,4 +300,3 @@ class Fashion200k(BaseDataset):
     def get_caption(self, caption_idx):
         caption = self.id2caption[caption_idx]
         return caption
-
