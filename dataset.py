@@ -15,7 +15,7 @@ class BaseDataset(torch.utils.data.Dataset):
     def __init__(self):
         super(BaseDataset, self).__init__()
         self.imgs = []
-        self.test_queries = []
+        self.train_queries = []
 
     def get_loader(self,
                    batch_size,
@@ -30,8 +30,8 @@ class BaseDataset(torch.utils.data.Dataset):
             drop_last=drop_last,
             collate_fn=lambda i: i)
 
-    def get_test_queries(self):
-        return self.test_queries
+    def get_train_queries(self):
+        return self.train_queries
 
     def get_all_texts(self):
         raise NotImplementedError
@@ -104,13 +104,13 @@ class Fashion200k(BaseDataset):
         mod_str = "replace " + source_word + " with " + target_word
         return source_word, target_word, mod_str
 
-    def generate_test_queries_(self):
+    def generate_train_queries_(self):
         file2imgid = {}
         for i, img in enumerate(self.imgs):
             file2imgid[img["file_path"]] = i
-        with open(self.img_path + "/test_queries.txt") as f:
+        with open(self.img_path + "/train_queries.txt") as f:
             lines = f.readlines()
-        self.test_queries = []
+        self.train_queries = []
         for line in lines:
             source_file, target_file = line.split()
             idx = file2imgid[source_file]
@@ -119,7 +119,7 @@ class Fashion200k(BaseDataset):
             target_caption = self.imgs[target_idx]["captions"][0]
             source_word, target_word, mod_str = self.get_different_word(
                 source_caption, target_caption)
-            self.test_queries += [{
+            self.train_queries += [{
                 "source_img_id": idx,
                 "source_caption": source_caption,
                 "target_caption": target_caption,
