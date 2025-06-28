@@ -393,15 +393,11 @@ class Fashion200kCombination(Fashion200k):
         target_idx = random.choice(self.caption2imgids[target_caption])
         template = random.choice(combination)
         if c_turn == 1:
-            mod_str = template.format(src1_word, "initial", src2_word, "first result retrieved")
+            mod_str = template.format(n_turn=1, old_attr1=src1_word, old_attr2=src2_word, new_attr=target_word)
         elif c_turn == 2:
-            mod_str = template.format(src1_word, "first result retrieved", src2_word, "second result retrieved")
+            mod_str = template.format(n_turn=2, old_attr1=src1_word, old_attr2=src2_word, new_attr=target_word)
         else:
-            mod_str = template.format(src1_word, "second result retrieved", src2_word, "third result retrieved")
-        if target_word:
-            mod_str += "with " + target_word + " element."
-        else:
-            mod_str += "."
+            mod_str = template.format(n_turn=3, old_attr1=src1_word, old_attr2=src2_word, new_attr=target_word)
         return {
             "source_img_id": (idx1, idx2),
             "target_img_id": target_idx,

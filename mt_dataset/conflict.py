@@ -1,11 +1,11 @@
 import random
 from dataset import Fashion200k
 from fashion_words import colors, items, material, pattern, silhouettes, structures, details
-from fashion_prompts import rollback
+from fashion_prompts import conflict
 
 
-class Fashion200kRollback(Fashion200k):
-    def __init__(self, path, seed=71):
+class Fashion200kConflict(Fashion200k):
+    def __init__(self, path, seed=210):
         super().__init__(path)
         self.transactions = list()
         random.seed(seed)
@@ -23,55 +23,65 @@ class Fashion200kRollback(Fashion200k):
                         result4 = self.turn3_sample_(result3["target_img_id"], result3["mod_type"].copy(),
                                                      result3["add_type"].copy(), 4)
                         if result4 is not None:
-                            result5 = self.rollback_(result2, result4["mod_type"].copy(), result4["add_type"].copy(),
-                                                     5, 2) \
-                                if self.rollback_(result2, result4["mod_type"].copy(), result4["add_type"].copy(),
+                            result5 = self.conflict_(result4, result1, result4["mod_type"].copy(),
+                                                     result4["add_type"].copy(),
+                                                     5, 1) \
+                                if self.conflict_(result4, result1, result4["mod_type"].copy(),
+                                                  result4["add_type"].copy(),
+                                                  5, 1) \
+                                else self.conflict_(result4, result2, result4["mod_type"].copy(),
+                                                    result4["add_type"].copy(),
+                                                    5, 2) \
+                                if self.conflict_(result4, result2, result4["mod_type"].copy(),
+                                                  result4["add_type"].copy(),
                                                   5, 2) \
-                                else self.rollback_(result3, result4["mod_type"].copy(), result4["add_type"].copy(),
-                                                    5, 3) \
-                                if self.rollback_(result3, result4["mod_type"].copy(), result4["add_type"].copy(),
-                                                  5, 3) \
-                                else self.rollback_(result4, result4["mod_type"].copy(), result4["add_type"].copy(),
-                                                    5, 4)
+                                else self.conflict_(result4, result3, result4["mod_type"].copy(),
+                                                    result4["add_type"].copy(),
+                                                    5, 3)
                             if result5 is not None:
                                 self.transactions.append(
                                     {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                      "turn-4": result4, "turn-5": result5})
                             else:
-                                result4 = self.rollback_(result2, result3["mod_type"].copy(),
+                                result4 = self.conflict_(result3, result1, result3["mod_type"].copy(),
                                                          result3["add_type"].copy(),
-                                                         4, 2) \
-                                    if self.rollback_(result2, result3["mod_type"].copy(), result3["add_type"].copy(),
-                                                      4, 2) \
-                                    else self.rollback_(result3, result3["mod_type"].copy(), result3["add_type"].copy(),
-                                                        4, 3)
+                                                         4, 1) \
+                                    if self.conflict_(result3, result1, result3["mod_type"].copy(),
+                                                      result3["add_type"].copy(),
+                                                      4, 1) \
+                                    else self.conflict_(result3, result2, result3["mod_type"].copy(),
+                                                        result3["add_type"].copy(),
+                                                        4, 2)
                                 if result4 is not None:
                                     self.transactions.append(
                                         {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                          "turn-4": result4})
                                 else:
-                                    result3 = self.rollback_(result2, result2["mod_type"].copy(),
+                                    result3 = self.conflict_(result2, result1, result2["mod_type"].copy(),
                                                              result2["add_type"].copy(),
-                                                             3, 2)
+                                                             3, 1)
                                     if result3 is not None:
                                         self.transactions.append(
                                             {"n_turns": 3, "turn-1": result1, "turn-2": result2,
                                              "turn-3": result3})
                         else:
-                            result4 = self.rollback_(result2, result3["mod_type"].copy(), result3["add_type"].copy(),
-                                                     4, 2) \
-                                if self.rollback_(result2, result3["mod_type"].copy(), result3["add_type"].copy(),
-                                                  4, 2) \
-                                else self.rollback_(result3, result3["mod_type"].copy(), result3["add_type"].copy(),
-                                                    4, 3)
+                            result4 = self.conflict_(result3, result1, result3["mod_type"].copy(),
+                                                     result3["add_type"].copy(),
+                                                     4, 1) \
+                                if self.conflict_(result3, result1, result3["mod_type"].copy(),
+                                                  result3["add_type"].copy(),
+                                                  4, 1) \
+                                else self.conflict_(result3, result2, result3["mod_type"].copy(),
+                                                    result3["add_type"].copy(),
+                                                    4, 2)
                             if result4 is not None:
                                 self.transactions.append(
                                     {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                      "turn-4": result4})
                     else:
-                        result3 = self.rollback_(result2, result2["mod_type"].copy(),
+                        result3 = self.conflict_(result2, result1, result2["mod_type"].copy(),
                                                  result2["add_type"].copy(),
-                                                 3, 2)
+                                                 3, 1)
                         if result3 is not None:
                             self.transactions.append(
                                 {"n_turns": 3, "turn-1": result1, "turn-2": result2,
@@ -178,106 +188,109 @@ class Fashion200kRollback(Fashion200k):
             return self.turn2_sample_(idx, mod_type, add_type, n_turn)
         return
 
-    def rollback_(self, r_result, mod_type, add_type, n_turn, r_turn):
-        r_mod_type = r_result["mod_type"]
-        r_add_type = r_result["add_type"]
-        max_item = max(r_mod_type + r_add_type, key=lambda t: int(t.split("-")[1]))
-        attr_type = max_item.split("-")[0]
+    def conflict_(self, c_result, r_result, mod_type, add_type, n_turn, c_turn):
+        c_mod_type = c_result["mod_type"]
+        c_add_type = c_result["add_type"]
+        matched_item = [t for t in c_mod_type + c_add_type if t.split("-")[1] == str(c_turn)][0]
+        attr_type = matched_item.split("-")[0]
 
-        src_idx = r_result["source_img_id"]
-        src_word = r_result["source_word"]
-        tar_word = r_result["target_word"]
+        r_src_word = r_result["source_word"]
+        r_tar_word = r_result["target_word"]
+        r_tar_idx = r_result["target_img_id"]
 
-        src_img = self.imgs[src_idx]
-        src_caption = src_img["captions"][0]
-        parent_caption = src_caption.replace(src_word, "")
+        c_tar_idx = c_result["target_img_id"]
+        c_tar_img = self.imgs[c_tar_idx]
+        c_tar_caption = c_tar_img["captions"][0]
+        src_idx = (r_tar_idx, c_tar_idx)
+
+        parent_caption = c_tar_caption.replace(r_tar_word, "")
         parent_caption = parent_caption.replace("  ", " ").strip()
 
         if attr_type == "color" and parent_caption in self.parent2different_colors \
-                and len(self.parent2different_colors[parent_caption]) >= 4:
+                and len(self.parent2different_colors[parent_caption]) >= 3:
             target_tuples = [t for t in self.parent2different_colors[parent_caption]
-                             if t[0] != src_word and t[0] != tar_word]
+                             if t[0] != r_src_word and t[0] != r_tar_word]
             target_tuple = random.choice(target_tuples)
-            source_tuple = [t for t in self.parent2different_colors[parent_caption] if t[0] == src_word][0]
+            source_tuple = [t for t in self.parent2different_colors[parent_caption] if t[0] == r_tar_word][0]
             mod_type.append(f"color-{n_turn}")
-            return self.add_single_turn_rollback(src_idx, source_tuple, target_tuple, mod_type, add_type, r_turn)
+            return self.add_single_turn_conflict(src_idx, source_tuple, target_tuple, mod_type, add_type, c_turn)
         elif attr_type == "item" and parent_caption in self.parent2different_items \
-                and len(self.parent2different_items[parent_caption]) >= 4:
+                and len(self.parent2different_items[parent_caption]) >= 3:
             target_tuples = [t for t in self.parent2different_items[parent_caption]
-                             if t[0] != src_word and t[0] != tar_word]
+                             if t[0] != r_src_word and t[0] != r_tar_word]
             target_tuple = random.choice(target_tuples)
-            source_tuple = [t for t in self.parent2different_items[parent_caption] if t[0] == src_word][0]
+            source_tuple = [t for t in self.parent2different_items[parent_caption] if t[0] == r_tar_word][0]
             mod_type.append(f"item-{n_turn}")
-            return self.add_single_turn_rollback(src_idx, source_tuple, target_tuple, mod_type, add_type, r_turn)
+            return self.add_single_turn_conflict(src_idx, source_tuple, target_tuple, mod_type, add_type, c_turn)
         elif attr_type == "material" and parent_caption in self.parent2different_material \
-                and len(self.parent2different_material[parent_caption]) >= 4:
+                and len(self.parent2different_material[parent_caption]) >= 3:
             target_tuples = [t for t in self.parent2different_material[parent_caption]
-                             if t[0] != src_word and t[0] != tar_word]
+                             if t[0] != r_src_word and t[0] != r_tar_word]
             target_tuple = random.choice(target_tuples)
-            source_tuple = [t for t in self.parent2different_material[parent_caption] if t[0] == src_word][0]
+            source_tuple = [t for t in self.parent2different_material[parent_caption] if t[0] == r_tar_word][0]
             mod_type.append(f"material-{n_turn}")
-            return self.add_single_turn_rollback(src_idx, source_tuple, target_tuple, mod_type, add_type, r_turn)
+            return self.add_single_turn_conflict(src_idx, source_tuple, target_tuple, mod_type, add_type, c_turn)
         elif attr_type == "pattern" and parent_caption in self.parent2different_pattern \
-                and len(self.parent2different_pattern[parent_caption]) >= 4:
+                and len(self.parent2different_pattern[parent_caption]) >= 3:
             target_tuples = [t for t in self.parent2different_pattern[parent_caption]
-                             if t[0] != src_word and t[0] != tar_word]
+                             if t[0] != r_src_word and t[0] != r_tar_word]
             target_tuple = random.choice(target_tuples)
-            source_tuple = [t for t in self.parent2different_pattern[parent_caption] if t[0] == src_word][0]
+            source_tuple = [t for t in self.parent2different_pattern[parent_caption] if t[0] == r_tar_word][0]
             mod_type.append(f"pattern-{n_turn}")
-            return self.add_single_turn_rollback(src_idx, source_tuple, target_tuple, mod_type, add_type, r_turn)
+            return self.add_single_turn_conflict(src_idx, source_tuple, target_tuple, mod_type, add_type, c_turn)
         elif attr_type == "functionality" and parent_caption in self.parent2different_functionalities \
-                and len(self.parent2different_functionalities[parent_caption]) >= 4:
+                and len(self.parent2different_functionalities[parent_caption]) >= 3:
             target_tuples = [t for t in self.parent2different_functionalities[parent_caption]
-                             if t[0] != src_word and t[0] != tar_word]
+                             if t[0] != r_src_word and t[0] != r_tar_word]
             target_tuple = random.choice(target_tuples)
-            source_tuple = [t for t in self.parent2different_functionalities[parent_caption] if t[0] == src_word][0]
+            source_tuple = [t for t in self.parent2different_functionalities[parent_caption] if t[0] == r_tar_word][0]
             mod_type.append(f"functionality-{n_turn}")
-            return self.add_single_turn_rollback(src_idx, source_tuple, target_tuple, mod_type, add_type, r_turn)
+            return self.add_single_turn_conflict(src_idx, source_tuple, target_tuple, mod_type, add_type, c_turn)
         elif attr_type == "silhouette" and parent_caption in self.parent2different_silhouettes \
-                and len(self.parent2different_silhouettes[parent_caption]) >= 4:
+                and len(self.parent2different_silhouettes[parent_caption]) >= 3:
             target_tuples = [t for t in self.parent2different_silhouettes[parent_caption]
-                             if t[0] != src_word and t[0] != tar_word]
+                             if t[0] != r_src_word and t[0] != r_tar_word]
             target_tuple = random.choice(target_tuples)
-            source_tuple = [t for t in self.parent2different_silhouettes[parent_caption] if t[0] == src_word][0]
+            source_tuple = [t for t in self.parent2different_silhouettes[parent_caption] if t[0] == r_tar_word][0]
             mod_type.append(f"silhouette-{n_turn}")
-            return self.add_single_turn_rollback(src_idx, source_tuple, target_tuple, mod_type, add_type, r_turn)
+            return self.add_single_turn_conflict(src_idx, source_tuple, target_tuple, mod_type, add_type, c_turn)
         elif attr_type == "structure" and parent_caption in self.parent2different_structures \
-                and len(self.parent2different_structures[parent_caption]) >= 4:
+                and len(self.parent2different_structures[parent_caption]) >= 3:
             target_tuples = [t for t in self.parent2different_structures[parent_caption]
-                             if t[0] != src_word and t[0] != tar_word]
+                             if t[0] != r_src_word and t[0] != r_tar_word]
             target_tuple = random.choice(target_tuples)
-            source_tuple = [t for t in self.parent2different_structures[parent_caption] if t[0] == src_word][0]
+            source_tuple = [t for t in self.parent2different_structures[parent_caption] if t[0] == r_tar_word][0]
             mod_type.append(f"structure-{n_turn}")
-            return self.add_single_turn_rollback(src_idx, source_tuple, target_tuple, mod_type, add_type, r_turn)
+            return self.add_single_turn_conflict(src_idx, source_tuple, target_tuple, mod_type, add_type, c_turn)
         elif attr_type == "detail" and parent_caption in self.parent2different_details \
-                and len(self.parent2different_details[parent_caption]) >= 4:
+                and len(self.parent2different_details[parent_caption]) >= 3:
             target_tuples = [t for t in self.parent2different_details[parent_caption]
-                             if t[0] != src_word and t[0] != tar_word]
+                             if t[0] != r_src_word and t[0] != r_tar_word]
             target_tuple = random.choice(target_tuples)
-            source_tuple = [t for t in self.parent2different_details[parent_caption] if t[0] == src_word][0]
+            source_tuple = [t for t in self.parent2different_details[parent_caption] if t[0] == r_tar_word][0]
             mod_type.append(f"detail-{n_turn}")
-            return self.add_single_turn_rollback(src_idx, source_tuple, target_tuple, mod_type, add_type, r_turn)
+            return self.add_single_turn_conflict(src_idx, source_tuple, target_tuple, mod_type, add_type, c_turn)
         elif attr_type == "style" and parent_caption in self.parent2different_style \
-                and len(self.parent2different_style[parent_caption]) >= 4:
+                and len(self.parent2different_style[parent_caption]) >= 3:
             target_tuples = [t for t in self.parent2different_style[parent_caption]
-                             if t[0] != src_word and t[0] != tar_word]
+                             if t[0] != r_src_word and t[0] != r_tar_word]
             target_tuple = random.choice(target_tuples)
-            source_tuple = [t for t in self.parent2different_style[parent_caption] if t[0] == src_word][0]
+            source_tuple = [t for t in self.parent2different_style[parent_caption] if t[0] == r_tar_word][0]
             mod_type.append(f"style-{n_turn}")
-            return self.add_single_turn_rollback(src_idx, source_tuple, target_tuple, mod_type, add_type, r_turn)
+            return self.add_single_turn_conflict(src_idx, source_tuple, target_tuple, mod_type, add_type, c_turn)
 
-    def add_single_turn_rollback(self, idx, source_tuple, target_tuple, mod_type, add_type, r_turn):
+    def add_single_turn_conflict(self, idx, source_tuple, target_tuple, mod_type, add_type, c_turn):
         source_word, source_caption_id = source_tuple
         target_word, target_caption_id = target_tuple
         target_caption = self.get_caption(target_caption_id)
         target_idx = random.choice(self.caption2imgids[target_caption])
-        template = random.choice(rollback)
-        if r_turn == 2:
-            mod_str = template.format(n_turn=1, new_attr=target_word)
-        elif r_turn == 3:
-            mod_str = template.format(n_turn=2, new_attr=target_word)
+        template = random.choice(conflict)
+        if c_turn == 1:
+            mod_str = template.format(n_turn=1, old_attr=source_word, new_attr=target_word)
+        elif c_turn == 2:
+            mod_str = template.format(n_turn=2, old_attr=source_word, new_attr=target_word)
         else:
-            mod_str = template.format(n_turn=3, new_attr=target_word)
+            mod_str = template.format(n_turn=3, old_attr=source_word, new_attr=target_word)
         return {
             "source_img_id": idx,
             "target_img_id": target_idx,

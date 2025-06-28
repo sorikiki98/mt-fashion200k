@@ -1,7 +1,7 @@
-from mt_dataset.combination import Fashion200kCombination
+from mt_dataset.conflict import Fashion200kConflict
 
 path = "C:\\Users\\user\\fashion200k"
-dataset = Fashion200kCombination(path)
+dataset = Fashion200kConflict(path)
 
 print(len(dataset))
 n_turn3 = [transaction for transaction in dataset if transaction["n_turns"] == 3]

@@ -49,7 +49,7 @@ class BaseDataset(torch.utils.data.Dataset):
 class Fashion200k(BaseDataset):
     """Fashion200k dataset."""
 
-    def __init__(self, path, split="train", transform=None):
+    def __init__(self, path, split="test", transform=None):
         super(Fashion200k, self).__init__()
 
         self.split = split
