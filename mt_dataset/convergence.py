@@ -1,13 +1,13 @@
 import random
 from dataset import Fashion200k
 from fashion_words import colors, items, material, pattern, silhouettes, structures, details, style, functionalities
+from fashion_prompts import replacement, addition
 
 
 class Fashion200kConvergence(Fashion200k):
     def __init__(self, path, seed=42):
-        super().__init__(path)
+        super().__init__(path, seed)
         self.transactions = list()
-        random.seed(seed)
         for idx in range(len(self.imgs)):
             mod_type = []
             add_type = []
@@ -56,7 +56,7 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_colors[p] if t[0] == source_word][0]
                 mod_type.append(f"color-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [])
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [], n_turn)
             elif (all(not m.startswith("item") for m in mod_type)
                   and source_word in items
                   and p in self.parent2different_items
@@ -65,7 +65,7 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_items[p] if t[0] == source_word][0]
                 mod_type.append(f"item-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [])
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [], n_turn)
             elif (all(not m.startswith("pattern") for m in mod_type)
                   and source_word in pattern
                   and p in self.parent2different_pattern
@@ -74,7 +74,7 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_pattern[p] if t[0] == source_word][0]
                 mod_type.append(f"pattern-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [])
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [], n_turn)
         # turn 1에서는 add_new_attributes 호출 X => 눈에 띄는 변화를 적용 하기 위함
         return
 
@@ -92,7 +92,7 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_structures[p] if t[0] == source_word][0]
                 mod_type.append(f"structure-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif (all(not m.startswith("silhouette") for m in mod_type)
                   and source_word in silhouettes
                   and p in self.parent2different_silhouettes
@@ -101,7 +101,7 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_silhouettes[p] if t[0] == source_word][0]
                 mod_type.append(f"silhouette-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
         if (any(attr in colors for attr in img["captions"][0].split()) and "color" not in mod_type
                 or any(attr in items for attr in img["captions"][0].split()) and "item" not in mod_type
                 or any(attr in pattern for attr in img["captions"][0].split()) and "pattern" not in mod_type):
@@ -122,7 +122,7 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_details[p] if t[0] == source_word][0]
                 mod_type.append(f"detail-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif (all(not m.startswith("material") for m in mod_type)
                   and source_word in material
                   and p in self.parent2different_material
@@ -131,7 +131,7 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_material[p] if t[0] == source_word][0]
                 mod_type.append(f"material-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif (all(not m.startswith("style") for m in mod_type)
                   and source_word in style
                   and p in self.parent2different_style
@@ -140,7 +140,7 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_style[p] if t[0] == source_word][0]
                 mod_type.append(f"style-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif (all(not m.startswith("functionality") for m in mod_type)
                   and source_word in functionalities
                   and p in self.parent2different_functionalities
@@ -149,7 +149,7 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_functionalities[p] if t[0] == source_word][0]
                 mod_type.append(f"functionality-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
         if (any(attr in structures for attr in img["captions"][0].split()) and "structure" not in mod_type
                 or any(attr in silhouettes for attr in img["captions"][0].split()) and "silhouette" not in mod_type):
             return self.turn2_sample_(idx, mod_type, add_type, n_turn)
@@ -163,66 +163,68 @@ class Fashion200kConvergence(Fashion200k):
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
                 add_type.append(f"pattern-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_details:
                 target_tuple = random.choice(self.parent2different_details[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
                 add_type.append(f"detail-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_items:
                 target_tuple = random.choice(self.parent2different_items[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
                 add_type.append(f"item_{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_style:
                 target_tuple = random.choice(self.parent2different_style[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
                 add_type.append(f"style_{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_silhouettes:
                 target_tuple = random.choice(self.parent2different_silhouettes[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
                 add_type.append(f"silhouette_{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_structures:
                 target_tuple = random.choice(self.parent2different_structures[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
                 add_type.append(f"structure_{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_colors:
                 target_tuple = random.choice(self.parent2different_colors[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
                 add_type.append(f"color_{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_material:
                 target_tuple = random.choice(self.parent2different_material[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
                 add_type.append(f"material_{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_functionalities:
                 target_tuple = random.choice(self.parent2different_functionalities[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
                 add_type.append(f"functionality_{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
         return
 
-    def add_single_turn(self, idx, source_tuple, target_tuple, mod_type, add_type):
+    def add_single_turn(self, idx, source_tuple, target_tuple, mod_type, add_type, n_turn):
         source_word, source_caption_id = source_tuple
         target_word, target_caption_id = target_tuple
         target_caption = self.get_caption(target_caption_id)
         target_idx = random.choice(self.caption2imgids[target_caption])
         if source_word == "":
-            mod_str = "add " + target_word
+            template = random.choice(addition)
+            mod_str = f"Turn {n_turn}: " + template.format(new_attr=target_word)
         else:
-            mod_str = "replace " + source_word + " with " + target_word
+            template = random.choice(replacement)
+            mod_str = f"Turn {n_turn}: " + template.format(old_attr=source_word, new_attr=target_word)
         return {
             "source_img_id": idx,
             "target_img_id": target_idx,

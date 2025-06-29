@@ -1,14 +1,13 @@
 import random
 from dataset import Fashion200k
 from fashion_words import colors, items, material, pattern, silhouettes, structures, details, style, functionalities
-from fashion_prompts import combination
+from fashion_prompts import combination, replacement, addition
 
 
 class Fashion200kCombination(Fashion200k):
     def __init__(self, path, seed=155):
-        super().__init__(path)
+        super().__init__(path, seed)
         self.transactions = list()
-        random.seed(seed)
         for idx in range(len(self.imgs)):
             mod_type = []
             add_type = []
@@ -131,7 +130,7 @@ class Fashion200kCombination(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_colors[p] if t[0] == source_word][0]
                 mod_type.append(f"color-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [])
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [], n_turn)
             elif (all(not m.startswith("item") for m in mod_type)
                   and source_word in items
                   and (p in self.parent2different_pattern or p in self.parent2different_colors or
@@ -145,7 +144,7 @@ class Fashion200kCombination(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_items[p] if t[0] == source_word][0]
                 mod_type.append(f"item-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [])
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [], n_turn)
             elif (all(not m.startswith("pattern") for m in mod_type)
                   and source_word in pattern
                   and (p in self.parent2different_colors or p in self.parent2different_items or
@@ -159,7 +158,7 @@ class Fashion200kCombination(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_pattern[p] if t[0] == source_word][0]
                 mod_type.append(f"pattern-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [])
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, [], n_turn)
         # turn 1에서는 add_new_attributes 호출 X => 눈에 띄는 변화를 적용 하기 위함
         return
 
@@ -179,7 +178,7 @@ class Fashion200kCombination(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_structures[p] if t[0] == source_word][0]
                 mod_type.append(f"structure-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif (all(not m.startswith("silhouette") for m in mod_type)
                   and source_word in silhouettes
                   and (p in self.parent2different_structures or p in self.parent2different_silhouettes)):
@@ -190,7 +189,7 @@ class Fashion200kCombination(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_silhouettes[p] if t[0] == source_word][0]
                 mod_type.append(f"silhouette-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
         if (any(attr in colors for attr in img["captions"][0].split()) and "color" not in mod_type
                 or any(attr in items for attr in img["captions"][0].split()) and "item" not in mod_type
                 or any(attr in pattern for attr in img["captions"][0].split()) and "pattern" not in mod_type):
@@ -218,7 +217,7 @@ class Fashion200kCombination(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_details[p] if t[0] == source_word][0]
                 mod_type.append(f"detail-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif (all(not m.startswith("material") for m in mod_type)
                   and source_word in material
                   and (p in self.parent2different_style or p in self.parent2different_functionalities or
@@ -232,7 +231,7 @@ class Fashion200kCombination(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_material[p] if t[0] == source_word][0]
                 mod_type.append(f"material-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif (all(not m.startswith("style") for m in mod_type)
                   and source_word in style
                   and (p in self.parent2different_functionalities or p in self.parent2different_details or
@@ -246,7 +245,7 @@ class Fashion200kCombination(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_style[p] if t[0] == source_word][0]
                 mod_type.append(f"style-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif (all(not m.startswith("functionality") for m in mod_type)
                   and source_word in functionalities
                   and (p in self.parent2different_details or p in self.parent2different_material or
@@ -260,7 +259,7 @@ class Fashion200kCombination(Fashion200k):
                 target_tuple = random.choice(target_tuples)
                 source_tuple = [t for t in self.parent2different_functionalities[p] if t[0] == source_word][0]
                 mod_type.append(f"functionality-{n_turn}")
-                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type)
+                return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
         if (any(attr in structures for attr in img["captions"][0].split()) and "structure" not in mod_type
                 or any(attr in silhouettes for attr in img["captions"][0].split()) and "silhouette" not in mod_type):
             return self.turn2_sample_(idx, mod_type, add_type, n_turn)
@@ -293,7 +292,7 @@ class Fashion200kCombination(Fashion200k):
             src2_tuple = (src2_word, src2_caption_id)
             add_type.append(f"color-{n_turn}")
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
         elif parent_caption := next((c for c in parent_caption_candidates if c in self.parent2different_items), None):
             target_tuple = random.choice(self.parent2different_items[parent_caption])
             src1_caption_id = self.caption2id[src1_caption]
@@ -302,7 +301,7 @@ class Fashion200kCombination(Fashion200k):
             src2_tuple = (src2_word, src2_caption_id)
             add_type.append(f"item-{n_turn}")
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
         elif parent_caption := next((c for c in parent_caption_candidates if c in self.parent2different_pattern), None):
             target_tuple = random.choice(self.parent2different_pattern[parent_caption])
             src1_caption_id = self.caption2id[src1_caption]
@@ -311,7 +310,7 @@ class Fashion200kCombination(Fashion200k):
             src2_tuple = (src2_word, src2_caption_id)
             add_type.append(f"pattern-{n_turn}")
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
         elif parent_caption := next((c for c in parent_caption_candidates if c in self.parent2different_silhouettes),
                                     None):
             target_tuple = random.choice(self.parent2different_silhouettes[parent_caption])
@@ -321,7 +320,7 @@ class Fashion200kCombination(Fashion200k):
             src2_tuple = (src2_word, src2_caption_id)
             add_type.append(f"silhouette-{n_turn}")
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
         elif parent_caption := next((c for c in parent_caption_candidates if c in self.parent2different_structures),
                                     None):
             target_tuple = random.choice(self.parent2different_structures[parent_caption])
@@ -331,7 +330,7 @@ class Fashion200kCombination(Fashion200k):
             src2_tuple = (src2_word, src2_caption_id)
             add_type.append(f"structure-{n_turn}")
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
         elif parent_caption := next((c for c in parent_caption_candidates if c in self.parent2different_details),
                                     None):
             target_tuple = random.choice(self.parent2different_details[parent_caption])
@@ -341,7 +340,7 @@ class Fashion200kCombination(Fashion200k):
             src2_tuple = (src2_word, src2_caption_id)
             add_type.append(f"detail-{n_turn}")
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
         elif parent_caption := next((c for c in parent_caption_candidates if c in self.parent2different_material),
                                     None):
             target_tuple = random.choice(self.parent2different_material[parent_caption])
@@ -351,7 +350,7 @@ class Fashion200kCombination(Fashion200k):
             src2_tuple = (src2_word, src2_caption_id)
             add_type.append(f"material-{n_turn}")
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
 
         elif parent_caption := next((c for c in parent_caption_candidates if c in self.parent2different_style),
                                     None):
@@ -362,7 +361,7 @@ class Fashion200kCombination(Fashion200k):
             src2_tuple = (src2_word, src2_caption_id)
             add_type.append(f"style-{n_turn}")
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
 
         elif parent_caption := next(
                 (c for c in parent_caption_candidates if c in self.parent2different_functionalities), None):
@@ -373,7 +372,7 @@ class Fashion200kCombination(Fashion200k):
             src2_tuple = (src2_word, src2_caption_id)
             add_type.append(f"functionality-{n_turn}")
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
         if caption := next(
                 (c for c in parent_caption_candidates if c in self.caption2imgids), None):
             target_caption_id = self.caption2id[caption]
@@ -383,9 +382,10 @@ class Fashion200kCombination(Fashion200k):
             src2_caption_id = self.caption2id[src2_caption]
             src2_tuple = (src2_word, src2_caption_id)
             return self.add_single_turn_combination(src1_idx, src2_idx, src1_tuple, src2_tuple, target_tuple,
-                                                    mod_type, add_type, c_turn)
+                                                    mod_type, add_type, c_turn, n_turn)
 
-    def add_single_turn_combination(self, idx1, idx2, src1_tuple, src2_tuple, target_tuple, mod_type, add_type, c_turn):
+    def add_single_turn_combination(self, idx1, idx2, src1_tuple, src2_tuple, target_tuple, mod_type, add_type, c_turn,
+                                    n_turn):
         src1_word, src1_caption_id = src1_tuple
         src2_word, src2_caption_id = src2_tuple
         target_word, target_caption_id = target_tuple
@@ -393,11 +393,14 @@ class Fashion200kCombination(Fashion200k):
         target_idx = random.choice(self.caption2imgids[target_caption])
         template = random.choice(combination)
         if c_turn == 1:
-            mod_str = template.format(n_turn=1, old_attr1=src1_word, old_attr2=src2_word, new_attr=target_word)
+            mod_str = f"Turn {n_turn}: " + template.format(n_turn=1, old_attr1=src1_word, old_attr2=src2_word,
+                                                           new_attr=target_word)
         elif c_turn == 2:
-            mod_str = template.format(n_turn=2, old_attr1=src1_word, old_attr2=src2_word, new_attr=target_word)
+            mod_str = f"Turn {n_turn}: " + template.format(n_turn=2, old_attr1=src1_word, old_attr2=src2_word,
+                                                           new_attr=target_word)
         else:
-            mod_str = template.format(n_turn=3, old_attr1=src1_word, old_attr2=src2_word, new_attr=target_word)
+            mod_str = f"Turn {n_turn}: " + template.format(n_turn=3, old_attr1=src1_word, old_attr2=src2_word,
+                                                           new_attr=target_word)
         return {
             "source_img_id": (idx1, idx2),
             "target_img_id": target_idx,
@@ -408,15 +411,17 @@ class Fashion200kCombination(Fashion200k):
             "add_type": add_type
         }
 
-    def add_single_turn(self, idx, source_tuple, target_tuple, mod_type, add_type):
+    def add_single_turn(self, idx, source_tuple, target_tuple, mod_type, add_type, n_turn):
         source_word, source_caption_id = source_tuple
         target_word, target_caption_id = target_tuple
         target_caption = self.get_caption(target_caption_id)
         target_idx = random.choice(self.caption2imgids[target_caption])
         if source_word == "":
-            mod_str = "add " + target_word + "."
+            template = random.choice(addition)
+            mod_str = f"Turn {n_turn}: " + template.format(new_attr=target_word)
         else:
-            mod_str = "replace " + source_word + " with " + target_word + "."
+            template = random.choice(replacement)
+            mod_str = f"Turn {n_turn}: " + template.format(old_attr=source_word, new_attr=target_word)
         return {
             "source_img_id": idx,
             "target_img_id": target_idx,

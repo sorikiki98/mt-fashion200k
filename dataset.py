@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image
 import re
+import random
 import torch
 import torch.utils.data
 import random
@@ -49,8 +50,9 @@ class BaseDataset(torch.utils.data.Dataset):
 class Fashion200k(BaseDataset):
     """Fashion200k dataset."""
 
-    def __init__(self, path, split="test", transform=None):
+    def __init__(self, path, seed=42, split="test", transform=None):
         super(Fashion200k, self).__init__()
+        random.seed(seed)
 
         self.split = split
         self.transform = transform
