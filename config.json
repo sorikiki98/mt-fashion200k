@@ -1,0 +1,16 @@
+{
+  "root_path": "C:\\Users\\user\\PycharmProjects\\mtcir",
+  "data_path": "C:\\Users\\user\\fashion200k",
+  "model_path": "C:\\Users\\user\\PycharmProjects\\mtcir\\model",
+  "json_path": "C:\\Users\\user\\PycharmProjects\\mtcir\\mt_dataset",
+  "dataset": "200k",
+  "num_epochs": 50,
+  "learning_rate": 1e-4,
+  "batch_size": 8,
+  "num_workers": 8,
+  "blip_model_name": "blip2_qformer_gated_attention",
+  "target_ratio": 1.25,
+  "input_dim": 224,
+  "validation_frequency": 1,
+  "max_turn": 5
+}

@@ -1,12 +1,12 @@
 import random
-from dataset import Fashion200k
+from fashion200k import Fashion200k
 from fashion_words import colors, items, material, pattern, silhouettes, structures, details, style, functionalities
 from fashion_prompts import combination, replacement, addition
 
 
 class Fashion200kCombination(Fashion200k):
-    def __init__(self, path, seed=155):
-        super().__init__(path, seed)
+    def __init__(self, path, seed=155, split="train"):
+        super().__init__(path, seed, split)
         self.transactions = list()
         for idx in range(len(self.imgs)):
             mod_type = []
@@ -427,7 +427,9 @@ class Fashion200kCombination(Fashion200k):
             "target_img_id": target_idx,
             "source_word": source_word,
             "target_word": target_word,
+            "source_img_path": self.imgs[idx]["file_path"],
+            "target_img_path": self.imgs[target_idx]["file_path"],
             "mod_str": mod_str,
             "mod_type": mod_type,
-            "add_type": add_type
+            "add_type": add_type,
         }

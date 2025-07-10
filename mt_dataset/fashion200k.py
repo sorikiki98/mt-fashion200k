@@ -1,16 +1,16 @@
 import numpy as np
 from PIL import Image
 import re
+from torch.utils.data import Dataset
 import random
 import torch
-import torch.utils.data
-import random
+
 from fashion_words import single_words, combinations, colors, items, material, pattern, functionalities, silhouettes, \
     structures, details, season, style, general
-from dataset_utils import extract_siblings_per_category
+from fashion200k_utils import extract_siblings_per_category
 
 
-class BaseDataset(torch.utils.data.Dataset):
+class BaseDataset(Dataset):
     """Base class for a dataset."""
 
     def __init__(self):
@@ -302,3 +302,4 @@ class Fashion200k(BaseDataset):
     def get_caption(self, caption_idx):
         caption = self.id2caption[caption_idx]
         return caption
+
