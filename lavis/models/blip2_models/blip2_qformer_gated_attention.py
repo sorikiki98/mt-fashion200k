@@ -34,7 +34,7 @@ class Blip2QformerGatedAttention(Blip2Base):
             num_query_token=32,
             cross_attention_freq=2,
             embed_dim=256,
-            max_txt_len=128,
+            max_txt_len=32,
             max_turn=5,
     ):
         super().__init__()
@@ -67,7 +67,7 @@ class Blip2QformerGatedAttention(Blip2Base):
 
         self.itm_head = nn.Linear(self.Qformer.config.hidden_size, 2)
         self.temp = nn.Parameter(0.07 * torch.ones([]))
-        self.max_txt_len = 128  # 这里得改？32改为128
+        self.max_txt_len = max_txt_len
         self.token_alpha = nn.Parameter(1.0 * torch.ones([]))
         self.num_query_token = num_query_token
 
@@ -81,23 +81,11 @@ class Blip2QformerGatedAttention(Blip2Base):
 
         self.max_turn = max_turn
 
-    def prune_tokens(self, before_tokens, after_tokens, keep_after=30):
-        # TODO: MIO module, expanded for Video domain (multi-frames similar to multi-images)
-        pass
-
     def BBC_loss(self, feats1, feats2):
         logits = 100 * feats1 @ feats2.T  # (B, B)
         labels = torch.arange(feats1.size(0)).long().to(feats1.device)
         loss = F.cross_entropy(logits, labels, reduction="none")
         return loss
-
-    def token_contrast_loss(self, token_feats, visual_token_feats):
-        sim_f2t = torch.matmul(token_feats.unsqueeze(1).unsqueeze(1), visual_token_feats.permute(0, 2, 1)).squeeze()
-        sim_matrix, _ = sim_f2t.max(-1)
-        sim_matrix = sim_matrix / self.temp
-        bs = token_feats.size(0)
-        targets = torch.linspace(0, bs - 1, bs, dtype=int).to(token_feats.device)
-        return F.cross_entropy(sim_matrix, targets)
 
     def forward(self, samples):
         n_turns = samples["n_turns"]
@@ -115,7 +103,6 @@ class Blip2QformerGatedAttention(Blip2Base):
 
         imgs = [ref_img, tar1_img, tar2_img, tar3_img, tar4_img, tar5_img]
         mods = [mod1_inputs, mod2_inputs, mod3_inputs, mod4_inputs, mod5_inputs]
-        loss_per_sample = torch.zeros(ref_img.size(0), device=ref_img.device)
         cached_query_tokens = self.query_tokens.expand(ref_img.size(0), -1, -1)
         with torch.no_grad():
             image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in imgs]
@@ -125,7 +112,7 @@ class Blip2QformerGatedAttention(Blip2Base):
                                              truncation=True,
                                              max_length=self.max_txt_len,
                                              return_tensors="pt").to(ref_img.device)
-                              for i in range(5)]  # [5, B, 128]
+                              for i in range(5)]
             empty_mods = [""] * ref_img.size(0)
             tar_tokens = self.tokenizer(
                 empty_mods,
@@ -135,292 +122,139 @@ class Blip2QformerGatedAttention(Blip2Base):
                 return_tensors="pt",
             ).to(ref_img.device)
 
+        loss_total = 0
+        loss_per_sample = torch.zeros(ref_img.size(0), device=ref_img.device)
+        query_tokens = None
         for turn_i in range(1, self.max_turn + 1):
-            if turn_i == 1:
-                last_mod_inputs = mod1_inputs
-            elif turn_i == 2:
-                last_mod_inputs = mod2_inputs
-            elif turn_i == 3:
-                last_mod_inputs = mod3_inputs
-            elif turn_i == 4:
-                last_mod_inputs = mod4_inputs
-            else:
-                last_mod_inputs = mod5_inputs
-            # last_modifier_tokens = self.tokenizer(
-            #     last_mod_inputs,
-            #     padding="max_length",
-            #     truncation=True,
-            #     max_length=self.max_txt_len,
-            #     return_tensors="pt",
-            # ).to(ref_img.device)
-            query_tokens = None
             valid_mask = (n_turns >= turn_i)
             if valid_mask.sum() == 0:
                 continue
-            for turn_j in range(1, turn_i + 1):
-                image_embeds = image_feats[turn_j - 1]
-                image_atts = image_atts_list[turn_j - 1]
-                if query_tokens is None:
-                    query_tokens = cached_query_tokens.clone()
-                query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
-                tar_query_tokens = cached_query_tokens.clone()
-                tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
-                modifier_tokens = mod_tokens_all[turn_j - 1]
+            image_embeds = image_feats[turn_i - 1]
+            image_atts = image_atts_list[turn_i - 1]
+            if query_tokens is None:
+                query_tokens = cached_query_tokens.clone()
+            query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
+            tar_query_tokens = cached_query_tokens.clone()
+            tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
-                attention_mask = torch.cat([query_atts, modifier_tokens.attention_mask], dim=1)
-                fusion_output = self.Qformer.bert(
-                    modifier_tokens.input_ids,
-                    query_embeds=query_tokens,
-                    attention_mask=attention_mask,
-                    encoder_hidden_states=image_embeds,  # cross attention
-                    encoder_attention_mask=image_atts,
-                    return_dict=True,
-                )
-                fusion_processed = query_tokens + fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
-                fusion_feats = F.normalize(self.text_proj(fusion_processed[:, -1, :]), dim=-1)
-                query_tokens = fusion_processed[:, : query_tokens.size(1), :]  # [b, 32, 768]
+            modifier_tokens = mod_tokens_all[turn_i - 1]
 
-                target_img_embeds = image_feats[turn_j]
-                target_img_atts = image_atts_list[turn_j]
+            attention_mask = torch.cat([query_atts, modifier_tokens.attention_mask], dim=1)
+            fusion_output = self.Qformer.bert(
+                modifier_tokens.input_ids,
+                query_embeds=query_tokens,
+                attention_mask=attention_mask,
+                encoder_hidden_states=image_embeds,  # cross attention
+                encoder_attention_mask=image_atts,
+                return_dict=True,
+            )
+            fusion_processed = query_tokens + fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
+            fusion_feats = F.normalize(self.text_proj(fusion_processed[:, -1, :]), dim=-1)
+            query_tokens = fusion_processed[:, : query_tokens.size(1), :]  # [b, 32, 768]
 
-                tar_attention_mask = torch.cat([tar_query_atts, tar_tokens.attention_mask], dim=1)
-                tar_fusion_output = self.Qformer.bert(
-                    tar_tokens.input_ids,
-                    query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
-                    attention_mask=tar_attention_mask,
-                    encoder_hidden_states=target_img_embeds,  # cross attention
-                    encoder_attention_mask=target_img_atts,
-                    return_dict=True,
-                )
-                tar_processed = tar_query_tokens + tar_fusion_output.last_hidden_state[:, : tar_query_tokens.size(1), :]
-                tar_fusion_feats = F.normalize(self.target_proj(tar_processed[:, -1, :]), dim=-1)
-                if turn_j == turn_i:
-                    per_sample_loss = self.BBC_loss(fusion_feats, tar_fusion_feats)  # (B,)
-                    valid_mask = valid_mask.to(per_sample_loss.device)
-                    loss_per_sample += per_sample_loss * valid_mask.float()
-        loss_per_sample /= n_turns.float().to(ref_img.device)  # (B,) / (B,)
-        loss_total = loss_per_sample.mean()
+            target_img_embeds = image_feats[turn_i]
+            target_img_atts = image_atts_list[turn_i]
 
-        return loss_total
+            tar_attention_mask = torch.cat([tar_query_atts, tar_tokens.attention_mask], dim=1)
+            tar_fusion_output = self.Qformer.bert(
+                tar_tokens.input_ids,
+                query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
+                attention_mask=tar_attention_mask,
+                encoder_hidden_states=target_img_embeds,  # cross attention
+                encoder_attention_mask=target_img_atts,
+                return_dict=True,
+            )
+            tar_processed = tar_query_tokens + tar_fusion_output.last_hidden_state[:, : tar_query_tokens.size(1), :]
+            tar_fusion_feats = F.normalize(self.target_proj(tar_processed[:, -1, :]), dim=-1)
+
+            loss_per_turn = self.BBC_loss(fusion_feats, tar_fusion_feats)
+            loss_per_sample += loss_per_turn
+
+            mask = (n_turns == turn_i)
+            filtered_loss = loss_per_sample[mask]
+            loss_total += filtered_loss.sum() / turn_i
+
+        return loss_total / ref_img.size(0)
 
     @torch.no_grad()
-    def inference(self, samples, mode="single"):
-        if mode == "single":
-            image_embeds = samples["img_embeds"]
-            target_feats = samples["target_feats"]
-            modifier = samples["text_input"]
-            ref_cap = samples["ref_cap"]
-            query_tokens = samples["fusion"]
-            """reference-text fusion"""
+    def inference(self, samples):
+        target_feats = samples["target_feats"]
+        n_turns = samples["n_turns"]
+        ref_img = samples["ref_img"]
+        mod1_inputs = samples["mod1"]
+        tar1_img = samples["tar1_img"]
+        mod2_inputs = samples["mod2"]
+        tar2_img = samples["tar2_img"]
+        mod3_inputs = samples["mod3"]
+        tar3_img = samples["tar3_img"]
+        mod4_inputs = samples["mod4"]
+        tar4_img = samples["tar4_img"]
+        mod5_inputs = samples["mod5"]
+        tar5_img = samples["tar5_img"]
+
+        imgs = [ref_img, tar1_img, tar2_img, tar3_img, tar4_img, tar5_img]
+        mods = [mod1_inputs, mod2_inputs, mod3_inputs, mod4_inputs, mod5_inputs]
+        cached_query_tokens = self.query_tokens.expand(ref_img.size(0), -1, -1)
+
+        image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in imgs]
+        image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
+        mod_tokens_all = [self.tokenizer(mods[i],
+                                         padding="max_length",
+                                         truncation=True,
+                                         max_length=self.max_txt_len,
+                                         return_tensors="pt").to(ref_img.device)
+                          for i in range(5)]
+
+        last_fusion_feats_all = torch.zeros(
+            ref_img.size(0), self.text_proj.out_features, device=ref_img.device
+        )
+        first_fusion_feats_all = torch.zeros(
+            ref_img.size(0), self.text_proj.out_features, device=ref_img.device
+        )
+        second_fusion_feats_all = torch.zeros(
+            ref_img.size(0), self.text_proj.out_features, device=ref_img.device
+        )
+        query_tokens = None
+        for turn_i in range(1, self.max_turn + 1):
+            valid_mask = (n_turns >= turn_i)
+            final_mask = (n_turns == turn_i)
+            if valid_mask.sum() == 0:
+                continue
+
+            image_embeds = image_feats[turn_i - 1]
+            image_atts = image_atts_list[turn_i - 1]
             if query_tokens is None:
-                query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
-            image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(self.device)
+                query_tokens = cached_query_tokens.clone()
+
             query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
-
-            modifier_tokens = self.tokenizer(
-                modifier,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_txt_len,
-                return_tensors="pt",
-            ).to(self.device)
-
-            ref_cap_tokens = self.tokenizer(
-                ref_cap,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_txt_len,
-                return_tensors="pt",
-            ).to(self.device)
+            modifier_tokens = mod_tokens_all[turn_i - 1]
 
             attention_mask = torch.cat([query_atts, modifier_tokens.attention_mask], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, ref_cap_tokens.attention_mask], dim=1)
             fusion_output = self.Qformer.bert(
-                ref_cap_tokens.input_ids,  # modifier_tokens.input_ids,
-                query_embeds=query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
-                attention_mask=ref_cap_attn_mask,  # attention_mask
+                modifier_tokens.input_ids,
+                query_embeds=query_tokens,
+                attention_mask=attention_mask,
                 encoder_hidden_states=image_embeds,  # cross attention
                 encoder_attention_mask=image_atts,
                 return_dict=True,
             )
-            text_output = self.Qformer.bert(
-                modifier_tokens.input_ids,
-                query_embeds=fusion_output.last_hidden_state[:, : query_tokens.size(1), :],  # [b, 32, 768]
-                attention_mask=attention_mask,
-                return_dict=True,
-            )
-            fusion_feats = F.normalize(self.text_proj(text_output.last_hidden_state[:, 32, :]), dim=-1)  # [b, 256]
-            sim_matrix = self.compute_distance_matrix(fusion_feats.to(self.device), target_feats)
-            return sim_matrix
 
-        elif mode == "fiq":
-            image_embeds = samples["img_embeds"]
-            target_feats = samples["target_feats"]
-            modifier = samples["text_input"]
-            ref_cap = samples["ref_cap"]
-            query_tokens = samples["fusion"]
-            """reference-text fusion"""
-            if query_tokens is None:
-                query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
-            image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(self.device)
-            query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
+            fusion_processed = query_tokens + fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
+            query_tokens = fusion_processed[:, : query_tokens.size(1), :]  # [b, 32, 768]
 
-            modifier_tokens = self.tokenizer(
-                modifier,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_txt_len,
-                return_tensors="pt",
-            ).to(self.device)
-
-            ref_cap_tokens = self.tokenizer(
-                ref_cap,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_txt_len,
-                return_tensors="pt",
-            ).to(self.device)
-
-            attention_mask = torch.cat([query_atts, modifier_tokens.attention_mask], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, ref_cap_tokens.attention_mask], dim=1)
-            fusion_output = self.Qformer.bert(
-                modifier_tokens.input_ids,  # modifier_tokens.input_ids, ref_cap_tokens.input_ids
-                query_embeds=query_tokens,  # Qformer里query embeds和 modifier_tokens会拼接
-                attention_mask=attention_mask,  # attention_mask, ref_cap_attn_mask
-                encoder_hidden_states=image_embeds,  # cross attention
-                encoder_attention_mask=image_atts,
-                return_dict=True,
-            )
-            text_output = self.Qformer.bert(
-                modifier_tokens.input_ids,
-                query_embeds=fusion_output.last_hidden_state[:, : query_tokens.size(1), :],  # [b, 32, 768]
-                attention_mask=attention_mask,
-                return_dict=True,
-            )
-            fusion_feats = F.normalize(self.text_proj(text_output.last_hidden_state[:, 32, :]), dim=-1)  # [b, 256]
-            sim = torch.matmul(
-                fusion_feats.unsqueeze(1).unsqueeze(1).to(target_feats.device),
-                target_feats.permute(0, 2, 1),
-            ).squeeze()
-            sim_matrix, _ = sim.max(-1)
-            return sim_matrix
-
-        elif mode == "token":
-            reference_embeds = samples["img_embeds"]
-            ref_cap = samples["ref_cap"]
-
-            image_atts = torch.ones(reference_embeds.size()[:-1], dtype=torch.long).to(
-                reference_embeds.device)  # [b, 257]
-            # 覆写机制 query tokens
-            before_query_tokens = None
-            if "fusion" in samples:
-                query_tokens = samples["fusion"].to(reference_embeds.device)
-                before_query_tokens = query_tokens.clone().detach()  # query_tokens.clone()
-            else:
-                query_tokens = self.query_tokens.expand(reference_embeds.shape[0], -1, -1)  # [b, 32, 768]
-            query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)  # [b, 32]
-
-            ref_cap_tokens = self.tokenizer(
-                ref_cap,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_txt_len,
-                return_tensors="pt",
-            ).to(reference_embeds.device)
-            ref_cap_attn_mask = torch.cat([query_atts, ref_cap_tokens.attention_mask], dim=1)
-            fusion_output = self.Qformer.bert(
-                ref_cap_tokens.input_ids,  # modifier_tokens.input_ids,
-                query_embeds=query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
-                attention_mask=ref_cap_attn_mask,  # attention_mask
-                encoder_hidden_states=reference_embeds,  # cross attention
-                encoder_attention_mask=image_atts,
-                return_dict=True,
-            )
-            query_fusion_tokens = fusion_output.last_hidden_state[:, : query_tokens.size(1), :]  # [b ,32, 768]
-            if before_query_tokens is not None:
-                query_fusion_tokens = self.prune_tokens(before_query_tokens, query_fusion_tokens)
-            return query_fusion_tokens
-
-        elif mode == "target":
-            tar_cap = samples["tar_cap"]
-            target_embeds = samples["target_embeds"]
-
-            query_tokens = self.query_tokens.expand(target_embeds.shape[0], -1, -1)  # [b, 32, 768]
-            query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(target_embeds.device)  # [b, 32]
-            """以下为target融合"""
-            tar_cap_tokens = self.tokenizer(
-                tar_cap,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_txt_len,
-                return_tensors="pt",
-            ).to(target_embeds.device)
-
-            target_embed_atts = torch.ones(target_embeds.size()[:-1], dtype=torch.long).to(target_embeds.device)
-            tar_attention_mask = torch.cat([query_atts, tar_cap_tokens.attention_mask], dim=1)
-
-            tar_fusion_output = self.Qformer.bert(
-                tar_cap_tokens.input_ids,
-                query_embeds=query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
-                attention_mask=tar_attention_mask,
-                encoder_hidden_states=target_embeds,  # cross attention
-                encoder_attention_mask=target_embed_atts,
-                return_dict=True,
-            )
-            tar_fusion_feats = F.normalize(self.target_proj(tar_fusion_output.last_hidden_state[:, 32, :]), dim=-1)
-            return tar_fusion_feats.cpu()
-
-        else:  # mode == "multi
-            target_feats = samples["target_feats"]
-            modified_text = samples["modified_text"]
-            ref_cap = samples["ref_cap"]
-
-            # 覆写机制 query tokens
-            query_tokens = samples["fusion"].to(self.device)
-            query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)  # [b, 32]
-
-            # text tokens
-            modifier_tokens = self.tokenizer(
-                modified_text,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_txt_len,
-                return_tensors="pt",
-            ).to(
-                self.device
-            )  # modifier_tokens.input_ids [b, 32]
-            attention_mask = torch.cat([query_atts, modifier_tokens.attention_mask], dim=1)
-
-            multi_query_tokens = query_tokens
-            multi_query_atts = torch.ones(multi_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
-            # 修改主要围绕这部分展开：1. caption的引入；2. 前query tokens的self-attention
-            ref_cap_tokens = self.tokenizer(
-                ref_cap,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_txt_len,
-                return_tensors="pt",
-            ).to(
-                self.device
-            )  # modifier_tokens.input_ids [b, 32]
-            ref_cap_attn_mask = torch.cat([multi_query_atts, ref_cap_tokens.attention_mask], dim=1)
-            fusion_output = self.Qformer.bert(
-                ref_cap_tokens.input_ids,  # modifier_tokens.input_ids,
-                query_embeds=multi_query_tokens,
-                attention_mask=ref_cap_attn_mask,  # attention_mask=multi_attn_mask,
-                return_dict=True,
-            )  # last_hidden_state: [3, 160, 768]
-
-            text_output = self.Qformer.bert(
-                modifier_tokens.input_ids,
-                query_embeds=fusion_output.last_hidden_state[:, : query_tokens.size(1), :],
-                attention_mask=attention_mask,
-                return_dict=True,
-            )  # last_hidden_state: [3, 160, 768]
-            fusion_feats = F.normalize(self.text_proj(text_output.last_hidden_state[:, 32, :]), dim=-1)  # [3, 256]
-            sim_matrix = self.compute_distance_matrix(fusion_feats.to(self.device), target_feats)
-            return sim_matrix
+            if turn_i == 1:
+                first_fusion_feats_all = F.normalize(self.text_proj(fusion_processed[:, -1, :]), dim=-1)
+            elif turn_i == 2:
+                second_fusion_feats_all = F.normalize(self.text_proj(fusion_processed[:, -1, :]), dim=-1)
+            if final_mask.sum() > 0:
+                selected_feats = fusion_processed[:, -1, :][final_mask]
+                projected_feats = F.normalize(self.text_proj(selected_feats), dim=-1)
+                last_fusion_feats_all[final_mask] = projected_feats
+        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all.to(self.device), target_feats)
+        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all.to(self.device), target_feats)
+        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all.to(self.device), target_feats)
+        return first_sim_matrix, second_sim_matrix, last_sim_matrix
 
     @torch.no_grad()
     def extract_target_features(self, image):
@@ -428,33 +262,41 @@ class Blip2QformerGatedAttention(Blip2Base):
             image_embeds_frozen = self.ln_vision(self.visual_encoder(image))
         image_embeds_frozen = image_embeds_frozen.float()
         image_atts = torch.ones(image_embeds_frozen.size()[:-1], dtype=torch.long).to(self.device)
-        query_tokens = self.query_tokens.expand(image_embeds_frozen.shape[0], -1, -1)
-        query_output = self.Qformer.bert(
-            query_embeds=query_tokens,
-            encoder_hidden_states=image_embeds_frozen,
+
+        empty_mods = [""] * image.size(0)
+        tar_tokens = self.tokenizer(
+            empty_mods,
+            padding="max_length",
+            truncation=True,
+            max_length=self.max_txt_len,
+            return_tensors="pt",
+        ).to(image.device)
+        ##
+        tar_query_tokens = self.query_tokens.expand(image_embeds_frozen.shape[0], -1, -1)
+        tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
+        tar_attention_mask = torch.cat([tar_query_atts, tar_tokens.attention_mask], dim=1)
+        tar_fusion_output = self.Qformer.bert(
+            tar_tokens.input_ids,
+            query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
+            attention_mask=tar_attention_mask,
+            encoder_hidden_states=image_embeds_frozen,  # cross attention
             encoder_attention_mask=image_atts,
             return_dict=True,
         )
-        image_embeds = query_output.last_hidden_state
-        image_features = F.normalize(self.target_proj(image_embeds), dim=-1)  # return image_embeds
-        return (
-            image_features,
-            image_embeds_frozen,
-        )  # [batch, 32, 256], [batch, 257, 1408]
+        tar_processed = tar_query_tokens + tar_fusion_output.last_hidden_state[:, : tar_query_tokens.size(1), :]
+        tar_fusion_feats = F.normalize(self.target_proj(tar_processed[:, -1, :]), dim=-1)
+        return tar_fusion_feats
 
     def compute_distance_matrix(self, fusion_feats, target_feats, chunk_size=1024 * 4):
         device = fusion_feats.device  # cuda
         num_fusion = fusion_feats.size(0)
         num_target = target_feats.size(0)
         num_chunks = (num_target + chunk_size - 1) // chunk_size
-        # 初始化距离矩阵
         distance_matrix = torch.zeros(num_fusion, num_target).cpu()
-        # 分块计算
         for i in range(num_chunks):
             start = i * chunk_size
             end = min((i + 1) * chunk_size, num_target)
             chunk_target_feats = target_feats[start:end, :].to(device)
-            # 计算当前块与fusion_feats之间的距离矩阵
             chunk_distance = torch.matmul(fusion_feats, chunk_target_feats.T).detach().cpu()
             distance_matrix[:, start:end] = chunk_distance  # 更新总距离矩阵
         return distance_matrix

@@ -1,6 +1,15 @@
 import os
 import torch
 from torch import nn
+import numpy as np
+import random
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
 
 
 def save_model(model_path: str, cur_epoch: int, model_to_save: nn.Module):
@@ -13,6 +22,47 @@ def save_model(model_path: str, cur_epoch: int, model_to_save: nn.Module):
         'epoch': cur_epoch,
         model_name: model_to_save.state_dict(),
     }, model_path)
+
+
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+
+def extract_index_blip_fusion_features(dataset, blip_model):
+    classic_val_loader = DataLoader(
+        dataset=dataset,
+        batch_size=256,
+        num_workers=8,
+        pin_memory=True,
+        collate_fn=collate_fn,
+        persistent_workers=True,
+    )
+    index_fusion_features = []
+    index_names = []
+
+    for names, images in tqdm(classic_val_loader, desc="Index"):
+        images = images.to(device, non_blocking=True)
+        with torch.no_grad():
+            index_fusion_feats = blip_model.extract_target_features(images)
+            index_fusion_features.append(index_fusion_feats)
+            index_names.extend(names)
+
+    index_fusion_features = torch.vstack(index_fusion_features)
+    index_names = [str(os.path.dirname(name)) for name in index_names]
+    return index_fusion_features, index_names
+
+
+def collate_fn(batch: list):
+    """
+    Discard None images in a batch when using torch DataLoader
+    :param batch: input_batch
+    :return: output_batch = input_batch - None_values
+    """
+    batch = list(filter(lambda x: x is not None, batch))
+    return torch.utils.data.dataloader.default_collate(batch)
 
 
 class AverageMeter(object):

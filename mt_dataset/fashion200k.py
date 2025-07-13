@@ -5,9 +5,9 @@ from torch.utils.data import Dataset
 import random
 import torch
 
-from fashion_words import single_words, combinations, colors, items, material, pattern, functionalities, silhouettes, \
+from mt_dataset.fashion_words import single_words, combinations, colors, items, material, pattern, functionalities, silhouettes, \
     structures, details, season, style, general
-from fashion200k_utils import extract_siblings_per_category
+from mt_dataset.fashion200k_utils import extract_siblings_per_category
 
 
 class BaseDataset(Dataset):

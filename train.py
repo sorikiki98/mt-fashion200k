@@ -8,24 +8,48 @@ from tqdm import tqdm
 from datetime import datetime
 from lavis.models import load_model_and_preprocess
 from mt_dataset import targetpad_transform, ComposeDataset
-from utils import AverageMeter, save_model
+from utils import AverageMeter, save_model, setup_seed
 
 
 def train_compose(cfg, **kwargs):
     device = kwargs["device"]
-    time_str = datetime.now().strftime("%m-%d-%H")
     blip_model, _, txt_processors = load_model_and_preprocess(
         name=cfg["blip_model_name"], model_type="pretrain", is_eval=False, device=device
     )
+
+    start_epoch = 0
+    if "resume_path" in cfg and cfg["resume_path"]:
+        print(f"Loading checkpoint from epoch{cfg['resume_path']}")
+        checkpoint = torch.load(cfg["resume_path"], map_location=device)
+
+        model_key = blip_model.__class__.__name__
+        if model_key in checkpoint:
+            missing_keys, unexpected_keys = blip_model.load_state_dict(checkpoint[model_key], strict=False)
+            print(f"Successfully loaded state_dict from key '{model_key}'")
+            if missing_keys:
+                print("Missing keys:", missing_keys)
+            if unexpected_keys:
+                print("Unexpected keys:", unexpected_keys)
+        else:
+            print(f"Key '{model_key}' not found in checkpoint. Available keys: {list(checkpoint.keys())}")
+
+        if "epoch" in checkpoint:
+            start_epoch = checkpoint["epoch"] + 1
+            print(f"Resuming training from epoch {start_epoch}")
+        else:
+            print("Warning: No epoch info found in checkpoint. Starting from epoch 0.")
+
     preprocess = targetpad_transform(cfg["target_ratio"], cfg["input_dim"])
-    dataset = ComposeDataset(split="train", preprocess=preprocess, dataset_name=cfg["dataset"], cfg=cfg)
+    dataset = ComposeDataset(split="train", preprocess=preprocess, dataset_name=cfg["dataset"], mode="relative",
+                             cfg=cfg)
     dataloader = DataLoader(
         dataset=dataset,
         batch_size=cfg["batch_size"],
         num_workers=cfg["num_workers"],
         pin_memory=True,
         drop_last=True,
-        shuffle=True
+        shuffle=True,
+        persistent_workers=True,
     )
     optimizer = optim.AdamW(
         [
@@ -46,9 +70,9 @@ def train_compose(cfg, **kwargs):
         steps_per_epoch=len(dataloader),
         epochs=cfg["num_epochs"],
     )
-    scaler = torch.cuda.amp.GradScaler()
+    scaler = torch.amp.GradScaler("cuda")
 
-    for epoch in range(cfg["num_epochs"]):
+    for epoch in range(start_epoch, cfg["num_epochs"]):
         losses = AverageMeter()
         for idx, (
                 n_turns,
@@ -61,7 +85,7 @@ def train_compose(cfg, **kwargs):
                 desc=f"Train [{epoch}]"
             )
         ):
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             blip_model.train()
 
             ref_img = ref_img.to(device, non_blocking=True)
@@ -80,7 +104,7 @@ def train_compose(cfg, **kwargs):
 
             if cfg["dataset"] == "200k":
                 try:
-                    with torch.cuda.amp.autocast():
+                    with torch.amp.autocast("cuda"):
                         loss = blip_model(
                             {"n_turns": n_turns,
                              "ref_img": ref_img,
@@ -96,16 +120,19 @@ def train_compose(cfg, **kwargs):
                              "tar5_img": tar5_img,
                              }
                         )
-                        print(loss)
+
+                        # if idx % 100 == 0:
+                        #    print(f"Batch-{idx} Loss: {loss}")
+                        scaler.scale(loss).backward()
+                        scaler.step(optimizer)
+                        scaler.update()
+                        scheduler.step()
+                        losses.update(loss.detach().cpu().item())
                 except Exception as e:
                     print("❌ error occurred:", e)
                     torch.cuda.empty_cache()
                     raise
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-                scheduler.step()
-                losses.update(loss.detach().cpu().item())
+
         if epoch % cfg["validation_frequency"] == 0:
             print(
                 "Train Epoch: [{0}]\t"
@@ -115,11 +142,13 @@ def train_compose(cfg, **kwargs):
                 )
             )
             model_path = cfg["model_path"]
-            save_model(f"{model_path}/{time_str}/epoch{epoch}.pth", epoch, blip_model)
+            save_model(f"{model_path}/epoch{epoch}.pth", epoch, blip_model)
         torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
+    setup_seed(42)
+
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
 

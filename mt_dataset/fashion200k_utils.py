@@ -1,10 +1,35 @@
 import csv
 import json
+import os
+from os import listdir
+from os.path import isfile
+from os.path import join
 
 
 def extract_siblings_per_category(words_dict, category):
     filtered_words_dict = {parent: value[category] for parent, value in words_dict.items() if category in value}
     return filtered_words_dict
+
+
+def extract_image_names(path, split="test"):
+    label_path = path + "/labels/"
+    label_files = [
+        f for f in listdir(label_path) if isfile(join(label_path, f))
+    ]
+    label_files = [f for f in label_files if split in f]
+    image_names = []
+
+    for filename in label_files:
+        print("read " + filename)
+        with open(label_path + "/" + filename, "rt", encoding="UTF8") as f:
+            lines = f.readlines()
+        for line in lines:
+            line = line.split("	")
+            image_name = line[0]
+            if image_name not in image_names:
+                image_names.append(image_name)
+
+    return image_names
 
 
 def export_siblings_per_category(words_dict, category):
@@ -49,4 +74,3 @@ def export_transactions_json(transactions, split="train", name="convergence"):
 
     with open(f"{split}_{name}.json", "w", encoding="utf-8") as f:
         json.dump(transactions, f, indent=4, ensure_ascii=False)
-
