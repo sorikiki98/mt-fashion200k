@@ -77,7 +77,9 @@ def train_compose(cfg, **kwargs):
         for idx, (
                 n_turns,
                 ref_img,
+                ref_cap,
                 tar_imgs,
+                tar_caps,
                 mods
         ) in enumerate(
             tqdm(
@@ -102,22 +104,36 @@ def train_compose(cfg, **kwargs):
             mod4_inputs = [txt_processors["eval"](m[3]) for m in mods]
             mod5_inputs = [txt_processors["eval"](m[4]) for m in mods]
 
+            tar_caps = list(zip(*tar_caps))
+            ref_captions = [txt_processors["eval"](cap) for cap in ref_cap]
+            tar1_captions = [txt_processors["eval"](cap[0]) for cap in tar_caps]
+            tar2_captions = [txt_processors["eval"](cap[1]) for cap in tar_caps]
+            tar3_captions = [txt_processors["eval"](cap[2]) for cap in tar_caps]
+            tar4_captions = [txt_processors["eval"](cap[3]) for cap in tar_caps]
+            tar5_captions = [txt_processors["eval"](cap[4]) for cap in tar_caps]
+
             if cfg["dataset"] == "200k":
                 try:
                     with torch.amp.autocast("cuda"):
                         loss = blip_model(
                             {"n_turns": n_turns,
                              "ref_img": ref_img,
+                             "ref_cap": ref_captions,
                              "mod1": mod1_inputs,
                              "tar1_img": tar1_img,
+                             "tar1_cap": tar1_captions,
                              "mod2": mod2_inputs,
                              "tar2_img": tar2_img,
+                             "tar2_cap": tar2_captions,
                              "mod3": mod3_inputs,
                              "tar3_img": tar3_img,
+                             "tar3_cap": tar3_captions,
                              "mod4": mod4_inputs,
                              "tar4_img": tar4_img,
+                             "tar4_cap": tar4_captions,
                              "mod5": mod5_inputs,
                              "tar5_img": tar5_img,
+                             "tar5_cap": tar5_captions
                              }
                         )
 

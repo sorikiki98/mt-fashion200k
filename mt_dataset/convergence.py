@@ -217,6 +217,7 @@ class Fashion200kConvergence(Fashion200k):
     def add_single_turn(self, idx, source_tuple, target_tuple, mod_type, add_type, n_turn):
         source_word, source_caption_id = source_tuple
         target_word, target_caption_id = target_tuple
+        source_caption = self.get_caption(source_caption_id)
         target_caption = self.get_caption(target_caption_id)
         target_idx = random.choice(self.caption2imgids[target_caption])
         if source_word == "":
@@ -230,6 +231,8 @@ class Fashion200kConvergence(Fashion200k):
             "target_img_id": target_idx,
             "source_word": source_word,
             "target_word": target_word,
+            "source_caption": source_caption,
+            "target_caption": target_caption,
             "source_img_path": self.imgs[idx]["file_path"],
             "target_img_path": self.imgs[target_idx]["file_path"],
             "mod_str": mod_str,

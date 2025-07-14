@@ -1,8 +1,8 @@
 {
   "root_path": "/mnt/c/Users/user/PycharmProjects/mtcir",
   "data_path": "/mnt/c/Users/user/fashion200k",
-  "model_path": "/mnt/c/Users/user/PycharmProjects/mtcir/model/convergence",
-  "resume_path": "/mnt/c/Users/user/PycharmProjects/mtcir/model/convergence/epoch11.pth",
+  "model_path": "/mnt/c/Users/user/PycharmProjects/mtcir/model/mai_convergence",
+  "resume_path": "",
   "json_path": "/mnt/c/Users/user/PycharmProjects/mtcir/mt_dataset",
   "dataset": "200k",
   "num_epochs": 50,

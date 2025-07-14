@@ -5,7 +5,7 @@ from combination import Fashion200kCombination
 from conflict import Fashion200kConflict
 from fashion200k_utils import export_transactions_json
 
-path = "C:\\Users\\user\\fashion200k"
+path = "/mnt/c/Users/user/fashion200k"
 
 # convergence
 convergence_train = Fashion200kConvergence(path, seed=42, split="train")

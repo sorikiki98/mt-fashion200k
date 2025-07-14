@@ -70,7 +70,8 @@ def generate_blip_compose_multi(blip_model, relative_val_dataset,
     second_distance = []
     last_distance = []
 
-    for n_turns, ref_img, ref_name, tar_imgs, tar_names, mods in tqdm(relative_val_loader, desc="Val"):
+    for n_turns, ref_img, ref_name, ref_caption, tar_imgs, tar_names, tar_captions, mods in tqdm(relative_val_loader,
+                                                                                                 desc="Val"):
         mods = list(zip(*mods))
         mod1_inputs = [txt_processors["eval"](m[0]) for m in mods]
         mod2_inputs = [txt_processors["eval"](m[1]) for m in mods]
