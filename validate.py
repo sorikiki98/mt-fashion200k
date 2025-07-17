@@ -79,6 +79,14 @@ def generate_blip_compose_multi(blip_model, relative_val_dataset,
         mod4_inputs = [txt_processors["eval"](m[3]) for m in mods]
         mod5_inputs = [txt_processors["eval"](m[4]) for m in mods]
 
+        tar_caps = list(zip(*tar_captions))
+        ref_captions = [txt_processors["eval"](cap) for cap in ref_caption]
+        tar1_captions = [txt_processors["eval"](cap[0]) for cap in tar_caps]
+        tar2_captions = [txt_processors["eval"](cap[1]) for cap in tar_caps]
+        tar3_captions = [txt_processors["eval"](cap[2]) for cap in tar_caps]
+        tar4_captions = [txt_processors["eval"](cap[3]) for cap in tar_caps]
+        tar5_captions = [txt_processors["eval"](cap[4]) for cap in tar_caps]
+
         ref_img = ref_img.to(device, non_blocking=True).half()
         tar1_img = tar_imgs[:, 0].to(device, non_blocking=True)  # torch.size([32, 3, 225, 225])
         tar2_img = tar_imgs[:, 1].to(device, non_blocking=True)
@@ -109,16 +117,22 @@ def generate_blip_compose_multi(blip_model, relative_val_dataset,
                 "target_feats": index_features,
                 "n_turns": n_turns,
                 "ref_img": ref_img,
+                "ref_cap": ref_captions,
                 "mod1": mod1_inputs,
                 "tar1_img": tar1_img,
+                "tar1_cap": tar1_captions,
                 "mod2": mod2_inputs,
                 "tar2_img": tar2_img,
+                "tar2_cap": tar2_captions,
                 "mod3": mod3_inputs,
                 "tar3_img": tar3_img,
+                "tar3_cap": tar3_captions,
                 "mod4": mod4_inputs,
                 "tar4_img": tar4_img,
+                "tar4_cap": tar4_captions,
                 "mod5": mod5_inputs,
-                "tar5_img": tar5_img
+                "tar5_img": tar5_img,
+                "tar5_cap": tar5_captions
             })
             first_distance.append(batch_first_distance)
             second_distance.append(batch_second_distance)

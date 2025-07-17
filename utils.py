@@ -43,10 +43,10 @@ def extract_index_blip_fusion_features(dataset, blip_model):
     index_fusion_features = []
     index_names = []
 
-    for names, images in tqdm(classic_val_loader, desc="Index"):
+    for names, images, captions in tqdm(classic_val_loader, desc="Index"):
         images = images.to(device, non_blocking=True)
         with torch.no_grad():
-            index_fusion_feats = blip_model.extract_target_features(images)
+            index_fusion_feats = blip_model.extract_target_features(images, captions)
             index_fusion_features.append(index_fusion_feats)
             index_names.extend(names)
 

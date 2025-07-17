@@ -107,10 +107,10 @@ addition = [
 ]
 
 rollback = [
-    "I like the fashion image at turn {n_turn}. Based on all the fashion attributes of this image, please find a new image that also incorporates the {new_attr} attribute.",
+    "I like the fashion image at turn {n_turn}. Based on all the fashion attributes of this image, find a image that incorporates the {new_attr} attribute.",
     "I like the fashion image at turn {n_turn}. Please find an image that reflects all of its fashion attributes plus a new {new_attr} attribute.",
     "The fashion image at turn {n_turn} appeals to me. Find an image that maintains all its fashion attributes and includes the new {new_attr} feature.",
-    "I’m fond of the fashion image from turn {n_turn}. Using all its fashion characteristics, find a new image that incorporates the {new_attr} attribute as well.",
+    "I’m fond of the fashion image from turn {n_turn}. Using all its fashion characteristics, find a new image that incorporates the {new_attr} attribute.",
     "I like the fashion image at turn {n_turn}. Based on all its fashion features, please locate an image that adds the {new_attr} attribute.",
     "The fashion image at turn {n_turn} is appealing to me. Find a new image that preserves its fashion attributes and adds the {new_attr} trait.",
     "I really like the fashion image from turn {n_turn}. Using its full set of fashion attributes, find an image that includes the {new_attr} property.",

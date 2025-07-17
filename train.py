@@ -70,6 +70,9 @@ def train_compose(cfg, **kwargs):
         steps_per_epoch=len(dataloader),
         epochs=cfg["num_epochs"],
     )
+    if start_epoch > 0:
+        scheduler.last_epoch = start_epoch * len(dataloader) - 1
+
     scaler = torch.amp.GradScaler("cuda")
 
     for epoch in range(start_epoch, cfg["num_epochs"]):

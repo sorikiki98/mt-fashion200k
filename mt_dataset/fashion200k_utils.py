@@ -11,13 +11,14 @@ def extract_siblings_per_category(words_dict, category):
     return filtered_words_dict
 
 
-def extract_image_names(path, split="test"):
+def extract_image_names_and_captions(path, split="test"):
     label_path = path + "/labels/"
     label_files = [
         f for f in listdir(label_path) if isfile(join(label_path, f))
     ]
     label_files = [f for f in label_files if split in f]
     image_names = []
+    captions = []
 
     for filename in label_files:
         print("read " + filename)
@@ -25,11 +26,12 @@ def extract_image_names(path, split="test"):
             lines = f.readlines()
         for line in lines:
             line = line.split("	")
-            image_name = line[0]
+            image_name, caption = line[0], line[2]
             if image_name not in image_names:
                 image_names.append(image_name)
+                captions.append(caption)
 
-    return image_names
+    return image_names, captions
 
 
 def export_siblings_per_category(words_dict, category):
