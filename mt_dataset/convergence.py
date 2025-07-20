@@ -174,43 +174,43 @@ class Fashion200kConvergence(Fashion200k):
                 target_tuple = random.choice(self.parent2different_items[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
-                add_type.append(f"item_{n_turn}")
+                add_type.append(f"item-{n_turn}")
                 return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_style:
                 target_tuple = random.choice(self.parent2different_style[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
-                add_type.append(f"style_{n_turn}")
+                add_type.append(f"style-{n_turn}")
                 return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_silhouettes:
                 target_tuple = random.choice(self.parent2different_silhouettes[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
-                add_type.append(f"silhouette_{n_turn}")
+                add_type.append(f"silhouette-{n_turn}")
                 return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_structures:
                 target_tuple = random.choice(self.parent2different_structures[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
-                add_type.append(f"structure_{n_turn}")
+                add_type.append(f"structure-{n_turn}")
                 return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_colors:
                 target_tuple = random.choice(self.parent2different_colors[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
-                add_type.append(f"color_{n_turn}")
+                add_type.append(f"color-{n_turn}")
                 return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_material:
                 target_tuple = random.choice(self.parent2different_material[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
-                add_type.append(f"material_{n_turn}")
+                add_type.append(f"material-{n_turn}")
                 return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
             elif c in self.parent2different_functionalities:
                 target_tuple = random.choice(self.parent2different_functionalities[c])
                 source_caption_id = self.caption2id[c]
                 source_tuple = ("", source_caption_id)
-                add_type.append(f"functionality_{n_turn}")
+                add_type.append(f"functionality-{n_turn}")
                 return self.add_single_turn(idx, source_tuple, target_tuple, mod_type, add_type, n_turn)
         return
 

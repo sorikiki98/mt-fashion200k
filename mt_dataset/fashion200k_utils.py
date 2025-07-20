@@ -74,5 +74,5 @@ def export_transactions_json(transactions, split="train", name="convergence"):
 
     transactions = transactions_turn3 + transactions_turn4 + transactions_turn5
 
-    with open(f"{split}_{name}_with_captions.json", "w", encoding="utf-8") as f:
+    with open(f"{split}_{name}.json", "w", encoding="utf-8") as f:
         json.dump(transactions, f, indent=4, ensure_ascii=False)

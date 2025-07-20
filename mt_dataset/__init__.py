@@ -67,26 +67,22 @@ class ComposeDataset(Dataset):
 
         if self.dataset_name == "200k":
             if split == "train":
-                with open(Path(self.json_file_root) / "train_convergence_with_captions.json",
+                with open(Path(self.json_file_root) / "train_convergence.json",
                           encoding="utf-8") as convergence:
                     convergence = json.load(convergence)
                 with open(Path(self.json_file_root) / "train_rollback.json", encoding="utf-8") as rollback:
                     rollback = json.load(rollback)
                 with open(Path(self.json_file_root) / "train_combination.json", encoding="utf-8") as combination:
                     combination = json.load(combination)
-                with open(Path(self.json_file_root) / "train_conflict.json", encoding="utf-8") as conflict:
-                    conflict = json.load(conflict)
             else:
-                with open(Path(self.json_file_root) / "test_convergence_with_captions.json",
+                with open(Path(self.json_file_root) / "test_convergence.json",
                           encoding="utf-8") as convergence:
                     convergence = json.load(convergence)
                 with open(Path(self.json_file_root) / "test_rollback.json", encoding="utf-8") as rollback:
                     rollback = json.load(rollback)
                 with open(Path(self.json_file_root) / "test_combination.json", encoding="utf-8") as combination:
                     combination = json.load(combination)
-                with open(Path(self.json_file_root) / "test_conflict.json", encoding="utf-8") as conflict:
-                    conflict = json.load(conflict)
-            self.transactions = convergence
+            self.transactions = convergence + rollback + combination
             if split == "test":
                 self.image_names, self.image_captions = extract_image_names_and_captions(self.data_root, split)
 
