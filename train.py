@@ -5,14 +5,24 @@ from torch import optim
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import OneCycleLR
 from tqdm import tqdm
-from datetime import datetime
 from lavis.models import load_model_and_preprocess
 from mt_dataset import targetpad_transform, ComposeDataset
 from utils import AverageMeter, save_model, setup_seed
+from retrospection import RetrospectiveMultiTurnCirModel
 
 
-def train_compose(cfg, **kwargs):
+def freeze_params(model):
+    for param in model.parameters():
+        param.requires_grad = False
+
+
+def train(cfg, **kwargs):
     device = kwargs["device"]
+    stage = kwargs["stage"]
+
+    if stage != "convergence" and stage != "retrospective" and stage != "rollback" and stage != "combination":
+        raise ValueError("Stage should be in ['convergence', 'retrospective', 'rollback', 'combination']")
+
     blip_model, _, txt_processors = load_model_and_preprocess(
         name=cfg["blip_model_name"], model_type="pretrain", is_eval=False, device=device
     )
@@ -20,11 +30,14 @@ def train_compose(cfg, **kwargs):
     start_epoch = 0
     if "resume_path" in cfg and cfg["resume_path"]:
         print(f"Loading checkpoint from epoch{cfg['resume_path']}")
-        checkpoint = torch.load(cfg["resume_path"], map_location=device)
+        checkpoint = torch.load(cfg["resume_path"], map_location=device)  # todo
 
-        model_key = blip_model.__class__.__name__
+        model_key = "Blip2QformerGatedAttention"
         if model_key in checkpoint:
-            missing_keys, unexpected_keys = blip_model.load_state_dict(checkpoint[model_key], strict=False)
+            state_dict = checkpoint[model_key]
+            state_dict['Qformer.cls.predictions.bias'] = state_dict['Qformer.cls.predictions.bias'][:30522]
+            state_dict['bertLM.cls.predictions.bias'] = state_dict['bertLM.cls.predictions.bias'][:30522]
+            missing_keys, unexpected_keys = blip_model.load_state_dict(state_dict, strict=False)
             print(f"Successfully loaded state_dict from key '{model_key}'")
             if missing_keys:
                 print("Missing keys:", missing_keys)
@@ -33,28 +46,39 @@ def train_compose(cfg, **kwargs):
         else:
             print(f"Key '{model_key}' not found in checkpoint. Available keys: {list(checkpoint.keys())}")
 
+        """
         if "epoch" in checkpoint:
             start_epoch = checkpoint["epoch"] + 1
             print(f"Resuming training from epoch {start_epoch}")
         else:
             print("Warning: No epoch info found in checkpoint. Starting from epoch 0.")
+        """
 
     preprocess = targetpad_transform(cfg["target_ratio"], cfg["input_dim"])
     dataset = ComposeDataset(split="train", preprocess=preprocess, dataset_name=cfg["dataset"], mode="relative",
-                             cfg=cfg)
+                             stage=stage, cfg=cfg)
     dataloader = DataLoader(
         dataset=dataset,
         batch_size=cfg["batch_size"],
-        num_workers=cfg["num_workers"],
+        num_workers=0,
         pin_memory=True,
         drop_last=True,
         shuffle=True,
-        persistent_workers=True,
+        # persistent_workers=True
     )
+
+    if stage == "retrospective":
+        freeze_params(blip_model)
+        blip_model.eval()
+        model = RetrospectiveMultiTurnCirModel(blip_model)
+        model.to(device)
+    else:
+        model = blip_model
+
     optimizer = optim.AdamW(
         [
             {
-                "params": filter(lambda p: p.requires_grad, blip_model.parameters()),
+                "params": filter(lambda p: p.requires_grad, model.parameters()),
                 "lr": cfg["learning_rate"],
                 "betas": (0.9, 0.98),
                 "eps": 1e-7,
@@ -91,7 +115,7 @@ def train_compose(cfg, **kwargs):
             )
         ):
             optimizer.zero_grad(set_to_none=True)
-            blip_model.train()
+            model.train()
 
             ref_img = ref_img.to(device, non_blocking=True)
             tar1_img = tar_imgs[:, 0].to(device, non_blocking=True)  # torch.size([32, 3, 225, 225])
@@ -100,14 +124,15 @@ def train_compose(cfg, **kwargs):
             tar4_img = tar_imgs[:, 3].to(device, non_blocking=True)
             tar5_img = tar_imgs[:, 4].to(device, non_blocking=True)
 
-            mods = list(zip(*mods))
+            mods = list(zip(*mods))  # (B, 5)
+
             mod1_inputs = [txt_processors["eval"](m[0]) for m in mods]
             mod2_inputs = [txt_processors["eval"](m[1]) for m in mods]
             mod3_inputs = [txt_processors["eval"](m[2]) for m in mods]
             mod4_inputs = [txt_processors["eval"](m[3]) for m in mods]
             mod5_inputs = [txt_processors["eval"](m[4]) for m in mods]
 
-            tar_caps = list(zip(*tar_caps))
+            tar_caps = list(zip(*tar_caps))  # (B, 5)
             ref_captions = [txt_processors["eval"](cap) for cap in ref_cap]
             tar1_captions = [txt_processors["eval"](cap[0]) for cap in tar_caps]
             tar2_captions = [txt_processors["eval"](cap[1]) for cap in tar_caps]
@@ -118,7 +143,7 @@ def train_compose(cfg, **kwargs):
             if cfg["dataset"] == "200k":
                 try:
                     with torch.amp.autocast("cuda"):
-                        loss = blip_model(
+                        loss = model(
                             {"n_turns": n_turns,
                              "ref_img": ref_img,
                              "ref_cap": ref_captions,
@@ -149,9 +174,7 @@ def train_compose(cfg, **kwargs):
                         losses.update(loss.detach().cpu().item())
                 except Exception as e:
                     print("❌ error occurred:", e)
-                    torch.cuda.empty_cache()
                     raise
-
         if epoch % cfg["validation_frequency"] == 0:
             print(
                 "Train Epoch: [{0}]\t"
@@ -161,7 +184,7 @@ def train_compose(cfg, **kwargs):
                 )
             )
             model_path = cfg["model_path"]
-            save_model(f"{model_path}/epoch{epoch}.pth", epoch, blip_model)
+            save_model(f"{model_path}/epoch{epoch}.pth", epoch, model)
         torch.cuda.empty_cache()
 
 
@@ -175,4 +198,4 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if config["dataset"] == "200k":
-        train_compose(config, device=device)
+        train(config, stage="retrospective", device=device)

@@ -13,6 +13,8 @@ from validate import compute_blip_compose_multi
 
 def test_compose(cfg, **kwargs):
     device = kwargs["device"]
+    stage = kwargs["stage"]
+
     blip_model, _, txt_processors = load_model_and_preprocess(
         name=cfg["blip_model_name"], model_type="pretrain", is_eval=False, device=device
     )
@@ -20,13 +22,14 @@ def test_compose(cfg, **kwargs):
         checkpoint = torch.load(cfg["resume_path"], map_location=device)
     except Exception as e:
         print("❌ Failed to load:", e)
-    blip_model.load_state_dict(checkpoint[blip_model.__class__.__name__], strict=False)
+    model_key = "Blip2QformerGatedAttention"  # todo
+    blip_model.load_state_dict(checkpoint[model_key], strict=False)
     preprocess = targetpad_transform(cfg["target_ratio"], cfg["input_dim"])
 
     relative_val_dataset = ComposeDataset(split="test", preprocess=preprocess, dataset_name=cfg["dataset"],
-                                          mode="relative", cfg=cfg)
+                                          mode="relative", stage=stage, cfg=cfg)
     classic_val_dataset = ComposeDataset(split="test", preprocess=preprocess, dataset_name=cfg["dataset"],
-                                         mode="classic", cfg=cfg)
+                                         mode="classic", stage=stage, cfg=cfg)
 
     with torch.no_grad():
         blip_model.eval()
@@ -53,4 +56,4 @@ if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if config["dataset"] == "200k":
-        test_compose(config, device=device)
+        test_compose(config, stage="convergence", device=device)

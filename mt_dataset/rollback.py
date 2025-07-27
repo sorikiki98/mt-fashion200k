@@ -389,7 +389,8 @@ class Fashion200kRollback(Fashion200k):
             "target_img_path": self.imgs[target_idx]["file_path"],
             "mod_str": mod_str,
             "mod_type": mod_type,
-            "add_type": add_type
+            "add_type": add_type,
+            "r_turn": r_turn
         }
 
     def add_single_turn(self, idx, source_tuple, target_tuple, mod_type, add_type, n_turn):

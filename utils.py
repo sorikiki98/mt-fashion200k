@@ -84,3 +84,16 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
+
+def validate_list_of_strings(name, lst):
+    if not isinstance(lst, list):
+        print(f"❌ {name} is not a list: {type(lst)}")
+        return False
+    for j, item in enumerate(lst):
+        if not isinstance(item, str):
+            print(f"❌ {name}[{j}] is not str: {item} ({type(item)})")
+            return False
+        if item.strip() == "":
+            print(f"⚠️ {name}[{j}] is an empty string.")
+    return True

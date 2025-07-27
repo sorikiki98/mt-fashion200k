@@ -4,6 +4,25 @@ from fashion_words import colors, items, material, pattern, silhouettes, structu
 from fashion_prompts import combination, replacement, addition
 
 
+def extract_previous_captions(results):
+    n_turns = results["n_turns"]
+    last_key = f"turn-{n_turns}"
+    last_result = results[last_key]
+    c_turn1 = last_result["c_turn"][0]
+    turn1_key = f"turn-{c_turn1}"
+    turn1_result = results[turn1_key]
+    caption1 = turn1_result["source_caption"]
+
+    c_turn2 = last_result["c_turn"][1]
+    turn2_key = f"turn-{c_turn2}"
+    turn2_result = results[turn2_key]
+    caption2 = turn2_result["source_caption"]
+
+    results[last_key]["combination_caption"] = [caption1, caption2]
+
+    return results
+
+
 class Fashion200kCombination(Fashion200k):
     def __init__(self, path, seed=155, split="train"):
         super().__init__(path, seed, split)
@@ -32,41 +51,41 @@ class Fashion200kCombination(Fashion200k):
                                                         5)
 
                             if result5 is not None:
-                                self.transactions.append(
-                                    {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                     "turn-4": result4, "turn-5": result5})
+                                results = {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                           "turn-4": result4, "turn-5": result5}
+                                self.transactions.append(extract_previous_captions(results))
                             else:
                                 result4 = self.combination_(results.copy()[:3], result3["mod_type"].copy(),
                                                             result3["add_type"].copy(),
                                                             4)
                                 if result4 is not None:
-                                    self.transactions.append(
-                                        {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                         "turn-4": result4})
+                                    results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                               "turn-4": result4}
+                                    self.transactions.append(extract_previous_captions(results))
                                 else:
                                     result3 = self.combination_(results.copy()[:2], result2["mod_type"].copy(),
                                                                 result2["add_type"].copy(),
                                                                 3)
                                     if result3 is not None:
-                                        self.transactions.append(
-                                            {"n_turns": 3, "turn-1": result1, "turn-2": result2,
-                                             "turn-3": result3})
+                                        results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
+                                                   "turn-3": result3}
+                                        self.transactions.append(extract_previous_captions(results))
                         else:
                             result4 = self.combination_(results.copy()[:3], result3["mod_type"].copy(),
                                                         result3["add_type"].copy(),
                                                         4)
                             if result4 is not None:
-                                self.transactions.append(
-                                    {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                     "turn-4": result4})
+                                results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                           "turn-4": result4}
+                                self.transactions.append(extract_previous_captions(results))
                     else:
                         result3 = self.combination_(results.copy()[:2], result2["mod_type"].copy(),
                                                     result2["add_type"].copy(),
                                                     3)
                         if result3 is not None:
-                            self.transactions.append(
-                                {"n_turns": 3, "turn-1": result1, "turn-2": result2,
-                                 "turn-3": result3})
+                            results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
+                                       "turn-3": result3}
+                            self.transactions.append(extract_previous_captions(results))
 
     def __len__(self):
         return len(self.transactions)
@@ -256,11 +275,14 @@ class Fashion200kCombination(Fashion200k):
                 mod_attr1, mod_turn1 = mod_type1.split("-")
                 org_word1, mod_word1 = results[int(mod_turn1) - 1]["source_word"], results[int(mod_turn1) - 1][
                     "target_word"]
+                org_caption1 = results[int(mod_turn1) - 1]["source_caption"]
                 for j in range(i + 1, num_of_mods):
                     mod_type2 = mod_type[j]
                     mod_attr2, mod_turn2 = mod_type2.split("-")
                     org_word2, mod_word2 = results[int(mod_turn2) - 1]["source_word"], results[int(mod_turn2) - 1][
                         "target_word"]
+                    org_caption2 = results[int(mod_turn2) - 1]["source_caption"]
+                    concat_captions = "FIRST: " + org_caption1 + " SECOND: " + org_caption2
                     recent_caption = results[-1]["target_caption"]
                     recent_caption = recent_caption.replace(mod_word1, org_word1)
                     recent_caption = recent_caption.replace(mod_word2, org_word2)
@@ -332,7 +354,7 @@ class Fashion200kCombination(Fashion200k):
                         if c in silhouettes and "silhouette" in available_mod_attrs:
                             parent_caption = recent_caption.replace(c, "")
                             parent_caption = parent_caption.replace("  ", " ").strip()
-                            
+
                             if parent_caption in self.parent2different_silhouettes and len(
                                     self.parent2different_silhouettes[parent_caption]) >= 2 \
                                     and any(t[0] == c for t in self.parent2different_silhouettes[parent_caption]):
@@ -348,7 +370,7 @@ class Fashion200kCombination(Fashion200k):
                         if c in details and "detail" in available_mod_attrs:
                             parent_caption = recent_caption.replace(c, "")
                             parent_caption = parent_caption.replace("  ", " ").strip()
-                            
+
                             if parent_caption in self.parent2different_details and len(
                                     self.parent2different_details[parent_caption]) >= 2 \
                                     and any(t[0] == c for t in self.parent2different_details[parent_caption]):
@@ -364,7 +386,7 @@ class Fashion200kCombination(Fashion200k):
                         if c in material and "material" in available_mod_attrs:
                             parent_caption = recent_caption.replace(c, "")
                             parent_caption = parent_caption.replace("  ", " ").strip()
-                            
+
                             if parent_caption in self.parent2different_material and len(
                                     self.parent2different_material[parent_caption]) >= 2 \
                                     and any(t[0] == c for t in self.parent2different_material[parent_caption]):
@@ -380,7 +402,7 @@ class Fashion200kCombination(Fashion200k):
                         if c in style and "style" in available_mod_attrs:
                             parent_caption = recent_caption.replace(c, "")
                             parent_caption = parent_caption.replace("  ", " ").strip()
-                            
+
                             if parent_caption in self.parent2different_style and len(
                                     self.parent2different_style[parent_caption]) >= 2 \
                                     and any(t[0] == c for t in self.parent2different_style[parent_caption]):
@@ -395,7 +417,7 @@ class Fashion200kCombination(Fashion200k):
                         if c in functionalities and "functionality" in available_mod_attrs:
                             parent_caption = recent_caption.replace(c, "")
                             parent_caption = parent_caption.replace("  ", " ").strip()
-                            
+
                             if parent_caption in self.parent2different_functionalities and len(
                                     self.parent2different_functionalities[parent_caption]) >= 2 \
                                     and any(t[0] == c for t in self.parent2different_functionalities[parent_caption]):
@@ -432,7 +454,8 @@ class Fashion200kCombination(Fashion200k):
             "target_img_path": self.imgs[target_idx]["file_path"],
             "mod_str": mod_str,
             "mod_type": mod_type,
-            "add_type": add_type
+            "add_type": add_type,
+            "c_turn": [c_turn1, c_turn2]
         }
 
     def add_single_turn(self, idx, source_tuple, target_tuple, mod_type, add_type, n_turn):

@@ -57,7 +57,7 @@ def targetpad_transform(target_ratio: float, dim: int):
 
 
 class ComposeDataset(Dataset):
-    def __init__(self, split, preprocess, dataset_name, mode, cfg):
+    def __init__(self, split, preprocess, dataset_name, mode, stage, cfg):
         self.split = split
         self.preprocess = preprocess
         self.dataset_name = dataset_name.lower()
@@ -82,7 +82,14 @@ class ComposeDataset(Dataset):
                     rollback = json.load(rollback)
                 with open(Path(self.json_file_root) / "test_combination.json", encoding="utf-8") as combination:
                     combination = json.load(combination)
-            self.transactions = convergence + rollback + combination
+            if stage == "convergence":
+                self.transactions = convergence
+            elif stage == "rollback":
+                self.transactions = rollback
+            elif stage == "combination":
+                self.transactions = combination
+            else:
+                self.transactions = convergence
             if split == "test":
                 self.image_names, self.image_captions = extract_image_names_and_captions(self.data_root, split)
 
@@ -125,6 +132,7 @@ class ComposeDataset(Dataset):
 
                     tar_imgs.append(tar_img)
                     tar_paths.append(tar_path)
+                    tar_paths.append(tar_path)
                     tar_captions.append(tar_caption)
                     mods.append(mod)
                 else:
@@ -136,7 +144,7 @@ class ComposeDataset(Dataset):
                 return (
                     n_turns,
                     ref_img,  # (C, H, W)
-                    ref_caption,
+                    ref_caption,  # str
                     torch.stack(tar_imgs),  # (5, C, H, W),
                     tar_captions,  # [str x 5]
                     mods  # [str x 5]

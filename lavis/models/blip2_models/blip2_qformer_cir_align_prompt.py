@@ -118,18 +118,26 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
         with torch.no_grad():
             image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in imgs]
             image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
-            mod_tokens_all = [self.tokenizer(mods[i],
-                                             padding="max_length",
-                                             truncation=True,
-                                             max_length=self.max_txt_len,
-                                             return_tensors="pt").to(ref_img.device)
-                              for i in range(5)]
-            cap_tokens_all = [self.tokenizer(caps[i],
-                                             padding="max_length",
-                                             truncation=True,
-                                             max_length=self.max_txt_len,
-                                             return_tensors="pt").to(ref_img.device)
-                              for i in range(6)]
+            mod_tokens_all = [
+                {k: v.to(ref_img.device) for k, v in self.tokenizer(
+                    list(mods[i]),
+                    padding="max_length",
+                    truncation=True,
+                    max_length=self.max_txt_len,
+                    return_tensors="pt"
+                ).items()}
+                for i in range(5)
+            ]
+            cap_tokens_all = [
+                {k: v.to(ref_img.device) for k, v in self.tokenizer(
+                    list(caps[i]),
+                    padding="max_length",
+                    truncation=True,
+                    max_length=self.max_txt_len,
+                    return_tensors="pt"
+                ).items()}
+                for i in range(6)
+            ]
 
         loss_total = 0
         loss_per_sample = torch.zeros(ref_img.size(0), device=ref_img.device)
@@ -151,10 +159,10 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
             ref_caption_tokens = cap_tokens_all[turn_i - 1]
             tar_caption_tokens = cap_tokens_all[turn_i]
 
-            attention_mask = torch.cat([query_atts, modifier_tokens.attention_mask], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, ref_caption_tokens.attention_mask], dim=1)
+            attention_mask = torch.cat([query_atts, modifier_tokens["attention_mask"]], dim=1)
+            ref_cap_attn_mask = torch.cat([query_atts, ref_caption_tokens["attention_mask"]], dim=1)
             fusion_output = self.Qformer.bert(
-                ref_caption_tokens.input_ids,
+                ref_caption_tokens["input_ids"],
                 query_embeds=query_tokens,
                 attention_mask=ref_cap_attn_mask,
                 encoder_hidden_states=image_embeds,
@@ -162,7 +170,7 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
                 return_dict=True,
             )
             text_output = self.Qformer.bert(
-                modifier_tokens.input_ids,
+                modifier_tokens["input_ids"],
                 query_embeds=fusion_output.last_hidden_state[:, : query_tokens.size(1), :],  # [b, 32, 768]
                 attention_mask=attention_mask,
                 return_dict=True,
@@ -174,9 +182,9 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
             target_img_embeds = image_feats[turn_i]
             target_img_atts = image_atts_list[turn_i]
 
-            tar_attention_mask = torch.cat([tar_query_atts, tar_caption_tokens.attention_mask], dim=1)
+            tar_attention_mask = torch.cat([tar_query_atts, tar_caption_tokens["attention_mask"]], dim=1)
             tar_fusion_output = self.Qformer.bert(
-                tar_caption_tokens.input_ids,
+                tar_caption_tokens["input_ids"],
                 query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
                 attention_mask=tar_attention_mask,
                 encoder_hidden_states=target_img_embeds,  # cross attention
@@ -187,7 +195,7 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
 
             tar_text_tokens = self.prompt_tokens.expand(image_embeds.shape[0], -1, -1)
             tar_text_output = self.Qformer.bert(
-                tar_caption_tokens.input_ids,
+                tar_caption_tokens["input_ids"],
                 query_embeds=tar_text_tokens,
                 attention_mask=tar_attention_mask,
                 return_dict=True,
@@ -198,7 +206,7 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
             mod_text_tokens = self.prompt_tokens.expand(
                 image_embeds.shape[0], -1, -1)
             mod_text_output = self.Qformer.bert(
-                modifier_tokens.input_ids,
+                modifier_tokens["input_ids"],
                 query_embeds=mod_text_tokens,
                 attention_mask=attention_mask,
                 return_dict=True,
@@ -249,18 +257,26 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
 
         image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in imgs]
         image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
-        mod_tokens_all = [self.tokenizer(mods[i],
-                                         padding="max_length",
-                                         truncation=True,
-                                         max_length=self.max_txt_len,
-                                         return_tensors="pt").to(ref_img.device)
-                          for i in range(5)]
-        cap_tokens_all = [self.tokenizer(caps[i],
-                                         padding="max_length",
-                                         truncation=True,
-                                         max_length=self.max_txt_len,
-                                         return_tensors="pt").to(ref_img.device)
-                          for i in range(6)]
+        mod_tokens_all = [
+            {k: v.to(ref_img.device) for k, v in self.tokenizer(
+                list(mods[i]),
+                padding="max_length",
+                truncation=True,
+                max_length=self.max_txt_len,
+                return_tensors="pt"
+            ).items()}
+            for i in range(5)
+        ]
+        cap_tokens_all = [
+            {k: v.to(ref_img.device) for k, v in self.tokenizer(
+                list(caps[i]),
+                padding="max_length",
+                truncation=True,
+                max_length=self.max_txt_len,
+                return_tensors="pt"
+            ).items()}
+            for i in range(6)
+        ]
 
         last_fusion_feats_all = torch.zeros(
             ref_img.size(0), self.text_proj.out_features, device=ref_img.device
@@ -287,10 +303,10 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
             modifier_tokens = mod_tokens_all[turn_i - 1]
             ref_caption_tokens = cap_tokens_all[turn_i - 1]
 
-            attention_mask = torch.cat([query_atts, modifier_tokens.attention_mask], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, ref_caption_tokens.attention_mask], dim=1)
+            attention_mask = torch.cat([query_atts, modifier_tokens["attention_mask"]], dim=1)
+            ref_cap_attn_mask = torch.cat([query_atts, ref_caption_tokens["attention_mask"]], dim=1)
             fusion_output = self.Qformer.bert(
-                ref_caption_tokens.input_ids,
+                ref_caption_tokens["input_ids"],
                 query_embeds=query_tokens,
                 attention_mask=ref_cap_attn_mask,
                 encoder_hidden_states=image_embeds,  # cross attention
@@ -298,7 +314,7 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
                 return_dict=True,
             )
             text_output = self.Qformer.bert(
-                modifier_tokens.input_ids,
+                modifier_tokens["input_ids"],
                 query_embeds=fusion_output.last_hidden_state[:, : query_tokens.size(1), :],  # [b, 32, 768]
                 attention_mask=attention_mask,
                 return_dict=True,
@@ -338,7 +354,7 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
         tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
         tar_attention_mask = torch.cat([tar_query_atts, cap_tokens.attention_mask], dim=1)
         tar_fusion_output = self.Qformer.bert(
-            cap_tokens.input_ids,
+            cap_tokens["input_ids"],
             query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
             attention_mask=tar_attention_mask,
             encoder_hidden_states=image_embeds_frozen,  # cross attention
