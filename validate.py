@@ -8,10 +8,9 @@ from tqdm import tqdm
 from utils import collate_fn, device
 
 
-def compute_blip_compose_multi(relative_val_dataset, blip_model, index_feats,
-                               index_names, txt_processors, dataset_name):
+def compute_blip_compose_multi(relative_val_dataset, model, index_feats, index_names):
     first_pred_sim, second_pred_sim, last_pred_sim, first_target_names, second_target_names, last_target_names, = (
-        generate_blip_compose_multi(blip_model, relative_val_dataset, index_feats, txt_processors))
+        generate_blip_compose_multi(model, relative_val_dataset, index_feats))
 
     first_recall_at1, first_recall_at5, first_recall_at10, first_recall_at20 = calculate_recall(first_pred_sim,
                                                                                                 index_names,
@@ -53,8 +52,7 @@ def calculate_recall(pred_sim, index_names, target_names):
     return recall_at1, recall_at5, recall_at10, recall_at20
 
 
-def generate_blip_compose_multi(blip_model, relative_val_dataset,
-                                index_features, txt_processors):
+def generate_blip_compose_multi(model, relative_val_dataset, index_features):
     relative_val_loader = DataLoader(dataset=relative_val_dataset,
                                      batch_size=16,
                                      num_workers=8,
@@ -70,69 +68,37 @@ def generate_blip_compose_multi(blip_model, relative_val_dataset,
     second_distance = []
     last_distance = []
 
-    for n_turns, ref_img, ref_name, ref_caption, tar_imgs, tar_names, tar_captions, mods in tqdm(relative_val_loader,
-                                                                                                 desc="Val"):
-        mods = list(zip(*mods))
-        mod1_inputs = [txt_processors["eval"](m[0]) for m in mods]
-        mod2_inputs = [txt_processors["eval"](m[1]) for m in mods]
-        mod3_inputs = [txt_processors["eval"](m[2]) for m in mods]
-        mod4_inputs = [txt_processors["eval"](m[3]) for m in mods]
-        mod5_inputs = [txt_processors["eval"](m[4]) for m in mods]
+    for samples in tqdm(relative_val_loader, desc="Val"):
+        images = samples.get("pil_images")
+        mod_input_ids = samples.get("mod_input_ids")
+        mod_attention_mask = samples.get("mod_attention_mask")
+        cap_input_ids = samples.get("cap_input_ids")
+        cap_attention_mask = samples.get("cap_attention_mask")
+        n_turns = samples.get("n_turns")
+        image_paths = samples.get("image_paths")  # (6, B)
 
-        tar_caps = list(zip(*tar_captions))
-        ref_captions = [txt_processors["eval"](cap) for cap in ref_caption]
-        tar1_captions = [txt_processors["eval"](cap[0]) for cap in tar_caps]
-        tar2_captions = [txt_processors["eval"](cap[1]) for cap in tar_caps]
-        tar3_captions = [txt_processors["eval"](cap[2]) for cap in tar_caps]
-        tar4_captions = [txt_processors["eval"](cap[3]) for cap in tar_caps]
-        tar5_captions = [txt_processors["eval"](cap[4]) for cap in tar_caps]
+        batch_size = images[0].size(0)
 
-        ref_img = ref_img.to(device, non_blocking=True).half()
-        tar1_img = tar_imgs[:, 0].to(device, non_blocking=True)  # torch.size([32, 3, 225, 225])
-        tar2_img = tar_imgs[:, 1].to(device, non_blocking=True)
-        tar3_img = tar_imgs[:, 2].to(device, non_blocking=True)
-        tar4_img = tar_imgs[:, 3].to(device, non_blocking=True)
-        tar5_img = tar_imgs[:, 4].to(device, non_blocking=True)
-
-        tar_names = list(zip(*tar_names))
-        tar1_name = [name[0] for name in tar_names]
-        tar2_name = [name[1] for name in tar_names]
-        tar3_name = [name[2] for name in tar_names]
-        tar4_name = [name[3] for name in tar_names]
-        tar5_name = [name[4] for name in tar_names]
-
-        for i in range(len(n_turns)):
+        for i in range(batch_size):
             turn = n_turns[i]
-            first_target_names_list.append(str(os.path.dirname(tar1_name[i])))
-            second_target_names_list.append(str(os.path.dirname(tar2_name[i])))
+            first_target_names_list.append(str(os.path.dirname(image_paths[1][i])))
+            second_target_names_list.append(str(os.path.dirname(image_paths[2][i])))
             if turn == 3:
-                last_target_names_list.append(str(os.path.dirname(tar3_name[i])))
+                last_target_names_list.append(str(os.path.dirname(image_paths[3][i])))
             elif turn == 4:
-                last_target_names_list.append(str(os.path.dirname(tar4_name[i])))
+                last_target_names_list.append(str(os.path.dirname(image_paths[4][i])))
             elif turn == 5:
-                last_target_names_list.append(str(os.path.dirname(tar5_name[i])))
+                last_target_names_list.append(str(os.path.dirname(image_paths[5][i])))
 
         with torch.amp.autocast("cuda"):
-            batch_first_distance, batch_second_distance, batch_last_distance = blip_model.inference({
+            batch_first_distance, batch_second_distance, batch_last_distance = model.inference({
                 "target_feats": index_features,
                 "n_turns": n_turns,
-                "ref_img": ref_img,
-                "ref_cap": ref_captions,
-                "mod1": mod1_inputs,
-                "tar1_img": tar1_img,
-                "tar1_cap": tar1_captions,
-                "mod2": mod2_inputs,
-                "tar2_img": tar2_img,
-                "tar2_cap": tar2_captions,
-                "mod3": mod3_inputs,
-                "tar3_img": tar3_img,
-                "tar3_cap": tar3_captions,
-                "mod4": mod4_inputs,
-                "tar4_img": tar4_img,
-                "tar4_cap": tar4_captions,
-                "mod5": mod5_inputs,
-                "tar5_img": tar5_img,
-                "tar5_cap": tar5_captions
+                "images": images,
+                "mod_input_ids": mod_input_ids,
+                "mod_attention_mask": mod_attention_mask,
+                "cap_input_ids": cap_input_ids,
+                "cap_attention_mask": cap_attention_mask
             })
             first_distance.append(batch_first_distance)
             second_distance.append(batch_second_distance)

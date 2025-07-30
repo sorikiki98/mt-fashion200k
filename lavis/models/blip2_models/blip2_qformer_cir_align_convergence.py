@@ -8,7 +8,6 @@ from lavis.models.blip2_models.blip2 import (
     Blip2Base,
     disabled_train,
 )
-from utils import validate_list_of_strings
 
 
 @registry.register_model("blip2_qformer_cir_align_convergence")
@@ -90,55 +89,27 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
 
     def forward(self, samples):
         n_turns = samples["n_turns"]
-        ref_img = samples["ref_img"]
-        ref_cap = samples["ref_cap"]
-        mod1_inputs = samples["mod1"]
-        tar1_img = samples["tar1_img"]
-        tar1_cap = samples["tar1_cap"]
-        mod2_inputs = samples["mod2"]
-        tar2_img = samples["tar2_img"]
-        tar2_cap = samples["tar2_cap"]
-        mod3_inputs = samples["mod3"]
-        tar3_img = samples["tar3_img"]
-        tar3_cap = samples["tar3_cap"]
-        mod4_inputs = samples["mod4"]
-        tar4_img = samples["tar4_img"]
-        tar4_cap = samples["tar4_cap"]
-        mod5_inputs = samples["mod5"]
-        tar5_img = samples["tar5_img"]
-        tar5_cap = samples["tar5_cap"]
+        images = samples["images"]  # (6, B, 3, 225, 225)
+        cap_input_ids = samples["cap_input_ids"]  # (6, B, 32)
+        cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 32)
+        mod_input_ids = samples["mod_input_ids"]  # (5, B, 40)
+        mod_attention_mask = samples["mod_attention_mask"]  # (5, B, 40)
 
-        imgs = [ref_img, tar1_img, tar2_img, tar3_img, tar4_img, tar5_img]
-        caps = [ref_cap, tar1_cap, tar2_cap, tar3_cap, tar4_cap, tar5_cap]
-        mods = [mod1_inputs, mod2_inputs, mod3_inputs, mod4_inputs, mod5_inputs]
+        cached_query_tokens = self.query_tokens.expand(images[0].size(0), -1, -1)
 
-        cached_query_tokens = self.query_tokens.expand(ref_img.size(0), -1, -1)
+        mod_attention_mask = [attn.to(self.device) for attn in mod_attention_mask]
+        cap_attention_mask = [attn.to(self.device) for attn in cap_attention_mask]
+
+        cap_input_ids = [input_id.to(self.device) for input_id in cap_input_ids]
+        mod_input_ids = [input_id.to(self.device) for input_id in mod_input_ids]
+
         with torch.no_grad():
-            image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in imgs]
+            images = [img.to(self.device, non_blocking=True) for img in images]
+            image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in images]
             image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
-            mod_tokens_all = [
-                {k: v.to(ref_img.device) for k, v in self.tokenizer(
-                    list(mods[i]),
-                    padding="max_length",
-                    truncation=True,
-                    max_length=self.max_txt_len,
-                    return_tensors="pt",
-                ).items()}
-                for i in range(5)
-            ]
-            cap_tokens_all = [
-                {k: v.to(ref_img.device) for k, v in self.tokenizer(
-                    list(caps[i]),
-                    padding="max_length",
-                    truncation=True,
-                    max_length=self.max_txt_len,
-                    return_tensors="pt"
-                ).items()}
-                for i in range(6)
-            ]
 
         loss_total = 0
-        loss_per_sample = torch.zeros(ref_img.size(0), device=ref_img.device)
+        loss_per_sample = torch.zeros(images[0].size(0), device=self.device)
         query_tokens = None
         for turn_i in range(1, self.max_turn + 1):
             valid_mask = (n_turns >= turn_i)
@@ -153,15 +124,11 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             tar_query_tokens = cached_query_tokens.clone()
             tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
-            modifier_tokens = mod_tokens_all[turn_i - 1]
-            ref_caption_tokens = cap_tokens_all[turn_i - 1]
-            tar_caption_tokens = cap_tokens_all[turn_i]
-
-            attention_mask = torch.cat([query_atts, modifier_tokens["attention_mask"]], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, ref_caption_tokens["attention_mask"]], dim=1)
+            attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
+            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
 
             fusion_output = self.Qformer.bert(
-                ref_caption_tokens["input_ids"],
+                cap_input_ids[turn_i - 1][:query_tokens.size(1)],
                 query_embeds=query_tokens,
                 attention_mask=ref_cap_attn_mask,
                 encoder_hidden_states=image_embeds,
@@ -170,7 +137,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             )
             fusion_processed = fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
             text_output = self.bertLM.bert(
-                modifier_tokens["input_ids"],
+                mod_input_ids[turn_i - 1][:query_tokens.size(1)],
                 query_embeds=fusion_processed,  # [b, 32, 768]
                 attention_mask=attention_mask,
                 return_dict=True,
@@ -182,9 +149,9 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             target_img_embeds = image_feats[turn_i]
             target_img_atts = image_atts_list[turn_i]
 
-            tar_attention_mask = torch.cat([tar_query_atts, tar_caption_tokens["attention_mask"]], dim=1)
+            tar_attention_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:query_tokens.size(1)]], dim=1)
             tar_fusion_output = self.Qformer.bert(
-                tar_caption_tokens["input_ids"],
+                cap_input_ids[turn_i][:query_tokens.size(1)],
                 query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
                 attention_mask=tar_attention_mask,
                 encoder_hidden_states=target_img_embeds,  # cross attention
@@ -197,7 +164,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
 
             tar_text_tokens = self.prompt_tokens.expand(image_embeds.shape[0], -1, -1)
             tar_text_output = self.Qformer.bert(
-                tar_caption_tokens["input_ids"],
+                cap_input_ids[turn_i][:query_tokens.size(1)],
                 query_embeds=tar_text_tokens,
                 attention_mask=tar_attention_mask,
                 return_dict=True,
@@ -208,7 +175,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             mod_text_tokens = self.prompt_tokens.expand(
                 image_embeds.shape[0], -1, -1)
             mod_text_output = self.Qformer.bert(
-                modifier_tokens["input_ids"],
+                mod_input_ids[turn_i - 1][:query_tokens.size(1)],
                 query_embeds=mod_text_tokens,
                 attention_mask=attention_mask,
                 return_dict=True,
@@ -217,10 +184,10 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             mod_cap_feat = F.normalize(self.text_proj(mod_text_output.last_hidden_state[:, 0, :]), dim=-1)
 
             loss_dict = {
-                "loss_fus2tar": self.BBC_loss(fusion_feats.to(ref_img.device), tar_fusion_feats.to(ref_img.device)),
-                'loss_fus2cap': self.BBC_loss(fusion_feats.to(ref_img.device), tar_cap_text_feat.to(ref_img.device)),
-                'loss_mod2fus': self.BBC_loss(mod_cap_feat.to(ref_img.device), tar_fusion_feats.to(ref_img.device)),
-                'loss_mod2cap': self.BBC_loss(mod_cap_feat.to(ref_img.device), tar_cap_text_feat.to(ref_img.device))
+                "loss_fus2tar": self.BBC_loss(fusion_feats.to(self.device), tar_fusion_feats.to(self.device)),
+                'loss_fus2cap': self.BBC_loss(fusion_feats.to(self.device), tar_cap_text_feat.to(self.device)),
+                'loss_mod2fus': self.BBC_loss(mod_cap_feat.to(self.device), tar_fusion_feats.to(self.device)),
+                'loss_mod2cap': self.BBC_loss(mod_cap_feat.to(self.device), tar_cap_text_feat.to(self.device))
             }
             loss_per_turn = sum(loss_dict.values())
             loss_per_sample += loss_per_turn
@@ -229,7 +196,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             filtered_loss = loss_per_sample[mask]
             loss_total += filtered_loss.sum() / turn_i
 
-        return loss_total / ref_img.size(0)
+        return loss_total / images[0].size(0)
 
     def fine_tune(self, output_dict):
         """
@@ -258,96 +225,92 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
         total_loss = self.BBC_loss(fusion_feats.to(self.device), tar_fusion_feats.to(self.device)).sum()
         return total_loss / last_fusion_processed.size(0)
 
+    def forward_fusion(self, attention_mask, query_tokens, input_ids=None, image_embeds=None, image_atts=None,
+                       no_img=False, learned_embeds=None):
+        if no_img:  # mod_text_output
+            if learned_embeds is not None:
+                output = self.Qformer.bert(
+                    query_embeds=query_tokens,
+                    attention_mask=attention_mask,
+                    return_dict=True,
+                    learned_embeds=learned_embeds
+                )
+                last_hidden_state = output.last_hidden_state
+            else:  # tar_text_output
+                output = self.Qformer.bert(
+                    input_ids[:query_tokens.size(1)],
+                    query_embeds=query_tokens,
+                    attention_mask=attention_mask,
+                    return_dict=True,
+                    no_img=no_img
+                )
+                last_hidden_state = output.last_hidden_state
+        else:  # (ref) fusion output
+            fusion_output = self.Qformer.bert(
+                input_ids[:query_tokens.size(1)],
+                query_embeds=query_tokens,
+                attention_mask=attention_mask,
+                encoder_hidden_states=image_embeds,
+                encoder_attention_mask=image_atts,
+                return_dict=True,
+            )
+            last_hidden_state = fusion_output.last_hidden_state
+        return last_hidden_state
+
+    def forward_text(self, attention_mask, learned_embeds, query_tokens):
+        text_output = self.bertLM.bert(
+            query_embeds=query_tokens,  # [b, 32, 768]
+            attention_mask=attention_mask,
+            learned_embeds=learned_embeds,
+            return_dict=True,
+        )
+        text_processed = text_output.last_hidden_state
+        return text_processed
+
     @torch.no_grad()
     def forward_history(self, samples):
         n_turns = samples["n_turns"]
-        ref_img = samples["ref_img"]
-        ref_cap = samples["ref_cap"]
-        mod1_inputs = samples["mod1"]
-        tar1_img = samples["tar1_img"]
-        tar1_cap = samples["tar1_cap"]
-        mod2_inputs = samples["mod2"]
-        tar2_img = samples["tar2_img"]
-        tar2_cap = samples["tar2_cap"]
-        mod3_inputs = samples["mod3"]
-        tar3_img = samples["tar3_img"]
-        tar3_cap = samples["tar3_cap"]
-        mod4_inputs = samples["mod4"]
-        tar4_img = samples["tar4_img"]
-        tar4_cap = samples["tar4_cap"]
-        mod5_inputs = samples["mod5"]
-        tar5_img = samples["tar5_img"]
-        tar5_cap = samples["tar5_cap"]
+        images = samples["images"]  # (6, B, 3, 225, 225)
+        cap_input_ids = samples["cap_input_ids"]  # (6, B, 32)
+        cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 32)
+        mod_input_ids = samples["mod_input_ids"]  # (5, B, 40)
+        mod_attention_mask = samples["mod_attention_mask"]  # (5, B, 40)
 
-        imgs = [ref_img, tar1_img, tar2_img, tar3_img, tar4_img, tar5_img]
-        caps = [ref_cap, tar1_cap, tar2_cap, tar3_cap, tar4_cap, tar5_cap]
-        mods = [mod1_inputs, mod2_inputs, mod3_inputs, mod4_inputs, mod5_inputs]
-        cached_query_tokens = self.query_tokens.expand(ref_img.size(0), -1, -1)
+        cached_query_tokens = self.query_tokens.expand(images[0].size(0), -1, -1)
 
-        image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in imgs]
+        images = [img.to(self.device, non_blocking=True) for img in images]
+        image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in images]
         image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
-        mod_tokens_all = []
 
-        for i in range(5):
-            try:
-                tokenized = self.tokenizer(
-                    [str(x) for x in mods[i]],
-                    text_pair=None,
-                    padding="max_length",
-                    truncation=True,
-                    max_length=self.max_txt_len,
-                    return_tensors="pt",
-                )
+        mod_attention_mask = [attn.to(self.device) for attn in mod_attention_mask]
+        cap_attention_mask = [attn.to(self.device) for attn in cap_attention_mask]
 
-                tokenized_on_device = {k: v.to(ref_img.device) for k, v in tokenized.items()}
-                mod_tokens_all.append(tokenized_on_device)
-
-            except Exception as e:
-                print(f"❌ tokenizer failed on mods[{i}]:", mods[i])
-                raise e  # or: continue
-        cap_tokens_all = []
-
-        for i in range(6):
-            try:
-                tokenized = self.tokenizer(
-                    [str(x) for x in caps[i]],
-                    text_pair=None,
-                    padding="max_length",
-                    truncation=True,
-                    max_length=self.max_txt_len,
-                    return_tensors="pt",
-                )
-
-                tokenized_on_device = {k: v.to(ref_img.device) for k, v in tokenized.items()}
-                cap_tokens_all.append(tokenized_on_device)
-
-            except Exception as e:
-                print(f"❌ tokenizer failed on caps[{i}]:", caps[i])
-                raise e  # 또는 continue
+        cap_input_ids = [input_id.to(self.device) for input_id in cap_input_ids]
+        mod_input_ids = [input_id.to(self.device) for input_id in mod_input_ids]
 
         last_ref_fusion_feats_all = torch.zeros(
-            ref_img.size(0), self.text_proj.out_features, device=ref_img.device
+            images[0].size(0), self.text_proj.out_features, device=self.device
         )
         last_ref_fusion_processed_all = torch.zeros(
-            ref_img.size(0), self.num_query_token, self.Qformer.config.hidden_size, device=ref_img.device
+            images[0].size(0), self.num_query_token, self.Qformer.config.hidden_size, device=self.device
         )
         last_tar_fusion_feats_all = torch.zeros(
-            ref_img.size(0), self.text_proj.out_features, device=ref_img.device
+            images[0].size(0), self.text_proj.out_features, device=self.device
         )
         last_tar_fusion_processed_all = torch.zeros(
-            ref_img.size(0), self.num_query_token, self.Qformer.config.hidden_size, device=ref_img.device
+            images[0].size(0), self.num_query_token, self.Qformer.config.hidden_size, device=self.device
         )
         first_fusion_feats_all = torch.zeros(
-            ref_img.size(0), self.text_proj.out_features, device=ref_img.device
+            images[0].size(0), self.text_proj.out_features, device=self.device
         )
         first_fusion_processed_all = torch.zeros(
-            ref_img.size(0), self.num_query_token, self.Qformer.config.hidden_size, device=ref_img.device
+            images[0].size(0), self.num_query_token, self.Qformer.config.hidden_size, device=self.device
         )
         second_fusion_feats_all = torch.zeros(
-            ref_img.size(0), self.text_proj.out_features, device=ref_img.device
+            images[0].size(0), self.text_proj.out_features, device=self.device
         )
         second_fusion_processed_all = torch.zeros(
-            ref_img.size(0), self.num_query_token, self.Qformer.config.hidden_size, device=ref_img.device
+            images[0].size(0), self.num_query_token, self.Qformer.config.hidden_size, device=self.device
         )
         query_tokens = None
         for turn_i in range(1, self.max_turn + 1):
@@ -365,14 +328,10 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             tar_query_tokens = cached_query_tokens.clone()
             tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
-            modifier_tokens = mod_tokens_all[turn_i - 1]
-            ref_caption_tokens = cap_tokens_all[turn_i - 1]
-            tar_caption_tokens = cap_tokens_all[turn_i]
-
-            attention_mask = torch.cat([query_atts, modifier_tokens["attention_mask"]], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, ref_caption_tokens["attention_mask"]], dim=1)
+            attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
+            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
             fusion_output = self.Qformer.bert(
-                ref_caption_tokens["input_ids"],
+                cap_input_ids[turn_i - 1][:query_tokens.size(1)],
                 query_embeds=query_tokens,
                 attention_mask=ref_cap_attn_mask,
                 encoder_hidden_states=image_embeds,  # cross attention
@@ -381,7 +340,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             )
             fusion_processed = fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
             text_output = self.bertLM.bert(
-                modifier_tokens["input_ids"],
+                mod_input_ids[turn_i - 1][:query_tokens.size(1)],
                 query_embeds=fusion_processed,  # [b, 32, 768]
                 attention_mask=attention_mask,
                 return_dict=True,
@@ -392,9 +351,9 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             target_img_embeds = image_feats[turn_i]
             target_img_atts = image_atts_list[turn_i]
 
-            tar_attention_mask = torch.cat([tar_query_atts, tar_caption_tokens["attention_mask"]], dim=1)
+            tar_attention_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:query_tokens.size(1)]], dim=1)
             tar_fusion_output = self.Qformer.bert(
-                tar_caption_tokens["input_ids"],
+                cap_input_ids[turn_i][:query_tokens.size(1)],
                 query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
                 attention_mask=tar_attention_mask,
                 encoder_hidden_states=target_img_embeds,  # cross attention
@@ -438,35 +397,28 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
         return first_sim_matrix, second_sim_matrix, last_sim_matrix
 
     @torch.no_grad()
-    def extract_target_features(self, image, caption):
+    def extract_target_features(self, images, cap_input_ids, cap_attention_mask):
         with self.maybe_autocast():
-            image_embeds_frozen = self.ln_vision(self.visual_encoder(image))
+            image_embeds_frozen = self.ln_vision(self.visual_encoder(images))
         image_embeds_frozen = image_embeds_frozen.float()
         image_atts = torch.ones(image_embeds_frozen.size()[:-1], dtype=torch.long).to(self.device)
 
-        cap_tokens = self.tokenizer(
-            caption,
-            padding="max_length",
-            truncation=True,
-            max_length=self.max_txt_len,
-            return_tensors="pt",
-        ).to(image.device)
+        cap_input_ids = cap_input_ids.to(self.device)
+        cap_attention_mask = cap_attention_mask.to(self.device)  # (256, 32)
 
-        ##
         tar_query_tokens = self.query_tokens.expand(image_embeds_frozen.shape[0], -1, -1)
         tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
-        tar_cap_attn_mask = torch.cat([tar_query_atts, cap_tokens.attention_mask], dim=1)
+        tar_cap_attn_mask = torch.cat([tar_query_atts, cap_attention_mask[:, :tar_query_tokens.size(1)]], dim=1)
 
-        tar_fusion_output = self.Qformer.bert(
-            cap_tokens.input_ids,
-            query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
+        tar_fusion_last_hidden = self.forward_fusion(
+            input_ids=cap_input_ids[:tar_query_tokens.size(1)],
+            query_tokens=tar_query_tokens,
             attention_mask=tar_cap_attn_mask,
-            encoder_hidden_states=image_embeds_frozen,  # cross attention
-            encoder_attention_mask=image_atts,
-            return_dict=True,
+            image_embeds=image_embeds_frozen,  # cross attention
+            image_atts=image_atts
         )
-        tar_fusion_processed = tar_fusion_output.last_hidden_state[:, : tar_query_tokens.size(1), :]
+        tar_fusion_processed = tar_fusion_last_hidden[:, : tar_query_tokens.size(1), :]
 
         tar_fusion_feats = F.normalize((self.target_proj(tar_fusion_processed)[:, -1, :]),
                                        dim=-1)

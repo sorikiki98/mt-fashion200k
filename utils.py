@@ -31,7 +31,7 @@ def setup_seed(seed):
     random.seed(seed)
 
 
-def extract_index_blip_fusion_features(dataset, blip_model):
+def extract_index_blip_fusion_features(dataset, model):
     classic_val_loader = DataLoader(
         dataset=dataset,
         batch_size=256,
@@ -43,10 +43,12 @@ def extract_index_blip_fusion_features(dataset, blip_model):
     index_fusion_features = []
     index_names = []
 
-    for names, images, captions in tqdm(classic_val_loader, desc="Index"):
+    for names, images, caption_input_ids, caption_attention_mask in tqdm(classic_val_loader, desc="Index"):
         images = images.to(device, non_blocking=True)
         with torch.no_grad():
-            index_fusion_feats = blip_model.extract_target_features(images, captions)
+            index_fusion_feats = model.blip_model.extract_target_features(images,
+                                                                          caption_input_ids,
+                                                                          caption_attention_mask)
             index_fusion_features.append(index_fusion_feats)
             index_names.extend(names)
 

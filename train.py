@@ -11,17 +11,12 @@ from utils import AverageMeter, save_model, setup_seed
 from retrospection import RetrospectiveMultiTurnCirModel
 
 
-def freeze_params(model):
-    for param in model.parameters():
-        param.requires_grad = False
-
-
 def train(cfg, **kwargs):
     device = kwargs["device"]
     stage = kwargs["stage"]
 
-    if stage != "convergence" and stage != "retrospective" and stage != "rollback" and stage != "combination":
-        raise ValueError("Stage should be in ['convergence', 'retrospective', 'rollback', 'combination']")
+    if stage != "convergence" and stage != "combination" and stage != "rollback" and stage != "retrospective":
+        raise ValueError("Stage should be in ['convergence', 'combination', 'rollback', 'retrospective']")
 
     blip_model, _, txt_processors = load_model_and_preprocess(
         name=cfg["blip_model_name"], model_type="pretrain", is_eval=False, device=device
@@ -35,8 +30,10 @@ def train(cfg, **kwargs):
         model_key = "Blip2QformerGatedAttention"
         if model_key in checkpoint:
             state_dict = checkpoint[model_key]
+
             state_dict['Qformer.cls.predictions.bias'] = state_dict['Qformer.cls.predictions.bias'][:30522]
             state_dict['bertLM.cls.predictions.bias'] = state_dict['bertLM.cls.predictions.bias'][:30522]
+
             missing_keys, unexpected_keys = blip_model.load_state_dict(state_dict, strict=False)
             print(f"Successfully loaded state_dict from key '{model_key}'")
             if missing_keys:
@@ -54,26 +51,29 @@ def train(cfg, **kwargs):
             print("Warning: No epoch info found in checkpoint. Starting from epoch 0.")
         """
 
-    preprocess = targetpad_transform(cfg["target_ratio"], cfg["input_dim"])
-    dataset = ComposeDataset(split="train", preprocess=preprocess, dataset_name=cfg["dataset"], mode="relative",
+    img_preprocessors = targetpad_transform(cfg["target_ratio"], cfg["input_dim"])
+    dataset = ComposeDataset(split="train", img_preprocess=img_preprocessors, txt_preprocess=txt_processors["eval"],
+                             dataset_name=cfg["dataset"], mode="relative",
                              stage=stage, cfg=cfg)
     dataloader = DataLoader(
         dataset=dataset,
         batch_size=cfg["batch_size"],
-        num_workers=0,
+        num_workers=cfg["num_workers"],
         pin_memory=True,
         drop_last=True,
         shuffle=True,
-        # persistent_workers=True
+        persistent_workers=True
     )
 
     if stage == "retrospective":
-        freeze_params(blip_model)
-        blip_model.eval()
-        model = RetrospectiveMultiTurnCirModel(blip_model)
+        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
         model.to(device)
     else:
         model = blip_model
+
+    for name, param in model.named_parameters():
+        if torch.isnan(param).any() or torch.isinf(param).any():
+            print(f"Found NaN/Inf in {name}")
 
     optimizer = optim.AdamW(
         [
@@ -101,72 +101,35 @@ def train(cfg, **kwargs):
 
     for epoch in range(start_epoch, cfg["num_epochs"]):
         losses = AverageMeter()
-        for idx, (
-                n_turns,
-                ref_img,
-                ref_cap,
-                tar_imgs,
-                tar_caps,
-                mods
-        ) in enumerate(
-            tqdm(
-                dataloader,
-                desc=f"Train [{epoch}]"
-            )
+        for idx, samples in enumerate(
+                tqdm(
+                    dataloader,
+                    desc=f"Train [{epoch}]"
+                )
         ):
             optimizer.zero_grad(set_to_none=True)
             model.train()
 
-            ref_img = ref_img.to(device, non_blocking=True)
-            tar1_img = tar_imgs[:, 0].to(device, non_blocking=True)  # torch.size([32, 3, 225, 225])
-            tar2_img = tar_imgs[:, 1].to(device, non_blocking=True)
-            tar3_img = tar_imgs[:, 2].to(device, non_blocking=True)
-            tar4_img = tar_imgs[:, 3].to(device, non_blocking=True)
-            tar5_img = tar_imgs[:, 4].to(device, non_blocking=True)
-
-            mods = list(zip(*mods))  # (B, 5)
-
-            mod1_inputs = [txt_processors["eval"](m[0]) for m in mods]
-            mod2_inputs = [txt_processors["eval"](m[1]) for m in mods]
-            mod3_inputs = [txt_processors["eval"](m[2]) for m in mods]
-            mod4_inputs = [txt_processors["eval"](m[3]) for m in mods]
-            mod5_inputs = [txt_processors["eval"](m[4]) for m in mods]
-
-            tar_caps = list(zip(*tar_caps))  # (B, 5)
-            ref_captions = [txt_processors["eval"](cap) for cap in ref_cap]
-            tar1_captions = [txt_processors["eval"](cap[0]) for cap in tar_caps]
-            tar2_captions = [txt_processors["eval"](cap[1]) for cap in tar_caps]
-            tar3_captions = [txt_processors["eval"](cap[2]) for cap in tar_caps]
-            tar4_captions = [txt_processors["eval"](cap[3]) for cap in tar_caps]
-            tar5_captions = [txt_processors["eval"](cap[4]) for cap in tar_caps]
+            images = samples.get("pil_images")
+            mod_input_ids = samples.get("mod_input_ids")
+            mod_attention_mask = samples.get("mod_attention_mask")
+            cap_input_ids = samples.get("cap_input_ids")
+            cap_attention_mask = samples.get("cap_attention_mask")
+            n_turns = samples.get("n_turns")
 
             if cfg["dataset"] == "200k":
                 try:
-                    with torch.amp.autocast("cuda"):
+                    with torch.cuda.amp.autocast():
                         loss = model(
                             {"n_turns": n_turns,
-                             "ref_img": ref_img,
-                             "ref_cap": ref_captions,
-                             "mod1": mod1_inputs,
-                             "tar1_img": tar1_img,
-                             "tar1_cap": tar1_captions,
-                             "mod2": mod2_inputs,
-                             "tar2_img": tar2_img,
-                             "tar2_cap": tar2_captions,
-                             "mod3": mod3_inputs,
-                             "tar3_img": tar3_img,
-                             "tar3_cap": tar3_captions,
-                             "mod4": mod4_inputs,
-                             "tar4_img": tar4_img,
-                             "tar4_cap": tar4_captions,
-                             "mod5": mod5_inputs,
-                             "tar5_img": tar5_img,
-                             "tar5_cap": tar5_captions
+                             "images": images,
+                             "mod_input_ids": mod_input_ids,
+                             "mod_attention_mask": mod_attention_mask,
+                             "cap_input_ids": cap_input_ids,
+                             "cap_attention_mask": cap_attention_mask
                              }
                         )
 
-                        # if idx % 100 == 0:
-                        #    print(f"Batch-{idx} Loss: {loss}")
                         scaler.scale(loss).backward()
                         scaler.step(optimizer)
                         scaler.update()
