@@ -60,10 +60,10 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
             tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
             attn_mask = torch.cat([query_atts, query_atts], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
+            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
 
             fusion_last_hidden = self.blip_model.forward_fusion(
-                input_ids=cap_input_ids[turn_i - 1][:query_tokens.size(1)],
+                input_ids=cap_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 attention_mask=ref_cap_attn_mask,
                 image_embeds=image_feats[turn_i - 1],
                 image_atts=image_atts_list[turn_i - 1],
@@ -78,13 +78,13 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
             text_last_hidden = self.blip_model.forward_text(attention_mask=attn_mask,
                                                             learned_embeds=learned_embeds,
                                                             query_tokens=fusion_processed)
-            text_processed = text_last_hidden[:, :query_tokens.size(1), :]
+            text_processed = text_last_hidden[1:, :query_tokens.size(1) + 1, :]
             query_tokens = self.blip_model.query_proj(fusion_processed + text_processed)
             fusion_feats = F.normalize((self.blip_model.text_proj(query_tokens[:, -1, :])), dim=-1)
 
-            tar_attn_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:query_tokens.size(1)]], dim=1)
+            tar_attn_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:, :tar_query_tokens.size(1)]], dim=1)
             tar_fusion_last_hidden = self.blip_model.forward_fusion(
-                input_ids=cap_input_ids[turn_i][:query_tokens.size(1)],
+                input_ids=cap_input_ids[turn_i][:, :tar_query_tokens.size(1)],
                 attention_mask=tar_attn_mask,
                 image_embeds=image_feats[turn_i],
                 image_atts=image_atts_list[turn_i],
@@ -95,7 +95,7 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
 
             tar_text_tokens = self.blip_model.prompt_tokens.expand(images[0].size(0), -1, -1)
             tar_text_last_hidden = self.blip_model.forward_fusion(
-                input_ids=cap_input_ids[turn_i][:tar_text_tokens.size(1)],
+                input_ids=cap_input_ids[turn_i][:, :tar_text_tokens.size(1)],
                 attention_mask=tar_attn_mask,
                 query_tokens=tar_text_tokens,
                 no_img=True)
@@ -151,13 +151,13 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
         image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
 
         last_ref_fusion_feats_all = torch.zeros(
-            images[0].size(0), self.text_proj.out_features, device=self.device
+            images[0].size(0), self.blip_model.text_proj.out_features, device=self.device
         )
         first_fusion_feats_all = torch.zeros(
-            images[0].size(0), self.text_proj.out_features, device=self.device
+            images[0].size(0), self.blip_model.text_proj.out_features, device=self.device
         )
         second_fusion_feats_all = torch.zeros(
-            images[0].size(0), self.text_proj.out_features, device=self.device
+            images[0].size(0), self.blip_model.text_proj.out_features, device=self.device
         )
         query_tokens = None
         for turn_i in range(1, self.max_turn + 1):
@@ -170,10 +170,10 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
             query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
             attn_mask = torch.cat([query_atts, query_atts], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
+            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
 
             fusion_last_hidden = self.blip_model.forward_fusion(
-                input_ids=cap_input_ids[turn_i - 1][:query_tokens.size(1)],
+                input_ids=cap_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 attention_mask=ref_cap_attn_mask,
                 image_embeds=image_feats[turn_i - 1],
                 image_atts=image_atts_list[turn_i - 1],
@@ -188,15 +188,15 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
             text_last_hidden = self.blip_model.forward_text(attention_mask=attn_mask,
                                                             learned_embeds=learned_embeds,
                                                             query_tokens=fusion_processed)
-            text_processed = text_last_hidden[:, :query_tokens.size(1), :]
+            text_processed = text_last_hidden[1:, :query_tokens.size(1) + 1, :]
             query_tokens = self.blip_model.query_proj(fusion_processed + text_processed)
 
             if turn_i == 1:
-                first_fusion_feats_all = F.normalize(self.text_proj(query_tokens[:, -1, :]), dim=-1)
+                first_fusion_feats_all = F.normalize(self.blip_model.text_proj(query_tokens[:, -1, :]), dim=-1)
             elif turn_i == 2:
-                second_fusion_feats_all = F.normalize(self.text_proj(query_tokens[:, -1, :]), dim=-1)
+                second_fusion_feats_all = F.normalize(self.blip_model.text_proj(query_tokens[:, -1, :]), dim=-1)
             if final_mask.sum() > 0:
-                selected_feats = self.text_proj(query_tokens[:, -1, :])[final_mask]
+                selected_feats = self.blip_model.text_proj(query_tokens[:, -1, :])[final_mask]
                 projected_feats = F.normalize(selected_feats, dim=-1)
                 last_ref_fusion_feats_all[final_mask] = projected_feats
 

@@ -24,10 +24,11 @@ def test_compose(cfg, **kwargs):
     )
     try:
         checkpoint = torch.load(cfg["resume_path"], map_location=device)
+        model_key = "RetrospectiveMultiTurnCirModel"  # todo
+        blip_model.load_state_dict(checkpoint[model_key], strict=False)
     except Exception as e:
         print("❌ Failed to load:", e)
-    model_key = "RetrospectiveMultiTurnCirModel"  # todo
-    blip_model.load_state_dict(checkpoint[model_key], strict=False)
+
     img_preprocessors = targetpad_transform(cfg["target_ratio"], cfg["input_dim"])
 
     relative_val_dataset = ComposeDataset(split="test",
