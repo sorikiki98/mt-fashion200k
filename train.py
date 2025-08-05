@@ -22,19 +22,25 @@ def train(cfg, **kwargs):
         name=cfg["blip_model_name"], model_type="pretrain", is_eval=False, device=device
     )
 
+    if stage == "retrospective":
+        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
+        model.to(device)
+    else:
+        model = blip_model
+
     start_epoch = 0
     if "resume_path" in cfg and cfg["resume_path"]:
         print(f"Loading checkpoint from epoch{cfg['resume_path']}")
         checkpoint = torch.load(cfg["resume_path"], map_location=device)  # todo
 
-        model_key = "Blip2QformerGatedAttention"
+        model_key = "RetrospectiveMultiTurnCirModel"
         if model_key in checkpoint:
             state_dict = checkpoint[model_key]
 
-            state_dict['Qformer.cls.predictions.bias'] = state_dict['Qformer.cls.predictions.bias'][:30522]
-            state_dict['bertLM.cls.predictions.bias'] = state_dict['bertLM.cls.predictions.bias'][:30522]
+            # state_dict['Qformer.cls.predictions.bias'] = state_dict['Qformer.cls.predictions.bias'][:30522]
+            # state_dict['bertLM.cls.predictions.bias'] = state_dict['bertLM.cls.predictions.bias'][:30522]
 
-            missing_keys, unexpected_keys = blip_model.load_state_dict(state_dict, strict=False)
+            missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
             print(f"Successfully loaded state_dict from key '{model_key}'")
             if missing_keys:
                 print("Missing keys:", missing_keys)
@@ -43,13 +49,11 @@ def train(cfg, **kwargs):
         else:
             print(f"Key '{model_key}' not found in checkpoint. Available keys: {list(checkpoint.keys())}")
 
-        """
         if "epoch" in checkpoint:
             start_epoch = checkpoint["epoch"] + 1
             print(f"Resuming training from epoch {start_epoch}")
         else:
             print("Warning: No epoch info found in checkpoint. Starting from epoch 0.")
-        """
 
     img_preprocessors = targetpad_transform(cfg["target_ratio"], cfg["input_dim"])
     dataset = ComposeDataset(split="train", img_preprocess=img_preprocessors, txt_preprocess=txt_processors["eval"],
@@ -62,14 +66,8 @@ def train(cfg, **kwargs):
         pin_memory=True,
         drop_last=True,
         shuffle=True,
-        persistent_workers=True
+        persistent_workers=False
     )
-
-    if stage == "retrospective":
-        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
-        model.to(device)
-    else:
-        model = blip_model
 
     for name, param in model.named_parameters():
         if torch.isnan(param).any() or torch.isinf(param).any():

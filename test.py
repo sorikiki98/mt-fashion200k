@@ -12,22 +12,43 @@ from validate import compute_blip_compose_multi
 from retrospection import RetrospectiveMultiTurnCirModel
 
 
-def test_compose(cfg, **kwargs):
+def test(cfg, **kwargs):
     device = kwargs["device"]
     stage = kwargs["stage"]
 
-    if stage != "convergence" and stage != "combination" and stage != "rollback" and stage != "combination":
-        raise ValueError("Stage should be in ['convergence', 'combination', 'rollback', 'combination']")
+    if stage != "convergence" and stage != "combination" and stage != "rollback" and stage != "retrospective":
+        raise ValueError("Stage should be in ['convergence', 'combination', 'rollback', 'retrospective']")
 
     blip_model, _, txt_processors = load_model_and_preprocess(
-        name=cfg["blip_model_name"], model_type="pretrain", is_eval=True, device=device
+        name=cfg["blip_model_name"], model_type="pretrain", is_eval=False, device=device
     )
-    try:
-        checkpoint = torch.load(cfg["resume_path"], map_location=device)
-        model_key = "RetrospectiveMultiTurnCirModel"  # todo
-        blip_model.load_state_dict(checkpoint[model_key], strict=False)
-    except Exception as e:
-        print("❌ Failed to load:", e)
+
+    if stage == "retrospective":
+        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
+        model.to(device)
+    else:
+        model = blip_model
+
+    if "resume_path" in cfg and cfg["resume_path"]:
+        print(f"Loading checkpoint from epoch{cfg['resume_path']}")
+        checkpoint = torch.load(cfg["resume_path"], map_location=device)  # todo
+
+        model_key = "Blip2QformerGatedAttention"
+        # model_key = "RetrospectiveMultiTurnCirModel"
+        if model_key in checkpoint:
+            state_dict = checkpoint[model_key]
+
+            state_dict['Qformer.cls.predictions.bias'] = state_dict['Qformer.cls.predictions.bias'][:30522]
+            state_dict['bertLM.cls.predictions.bias'] = state_dict['bertLM.cls.predictions.bias'][:30522]
+
+            missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+            print(f"Successfully loaded state_dict from key '{model_key}'")
+            if missing_keys:
+                print("Missing keys:", missing_keys)
+            if unexpected_keys:
+                print("Unexpected keys:", unexpected_keys)
+        else:
+            print(f"Key '{model_key}' not found in checkpoint. Available keys: {list(checkpoint.keys())}")
 
     img_preprocessors = targetpad_transform(cfg["target_ratio"], cfg["input_dim"])
 
@@ -45,12 +66,6 @@ def test_compose(cfg, **kwargs):
                                          mode="classic",
                                          stage=stage,
                                          cfg=cfg)
-
-    if stage == "combination":
-        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
-        model.to(device)
-    else:
-        model = blip_model
 
     with torch.no_grad():
         blip_model.eval()
@@ -75,4 +90,4 @@ if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if config["dataset"] == "200k":
-        test_compose(config, stage="combination", device=device)
+        test(config, stage="combination", device=device)

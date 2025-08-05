@@ -59,7 +59,7 @@ def generate_blip_compose_multi(model, relative_val_dataset, index_features):
                                      pin_memory=True,
                                      collate_fn=collate_fn,
                                      shuffle=False,
-                                     persistent_workers=True, )
+                                     persistent_workers=False, )
 
     first_target_names_list = []
     second_target_names_list = []

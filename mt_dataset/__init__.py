@@ -68,9 +68,7 @@ class ComposeDataset(Dataset):
         self.max_cap_token_len = cfg["max_cap_token_len"]
         self.max_mod_token_len = cfg["max_mod_token_len"]
         self.mode = mode
-        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased",
-                                                       truncation_side="right",
-                                                       use_fast=False)
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", truncation_side="right")
 
         if self.dataset_name == "200k":
             if split == "train":
@@ -96,7 +94,7 @@ class ComposeDataset(Dataset):
             elif stage == "combination":
                 self.transactions = combination
             else:
-                self.transactions = convergence + rollback + combination
+                self.transactions = rollback
                 # self.transactions = combination
             if split == "test":
                 self.image_names, self.image_captions = extract_image_names_and_captions(self.data_root, split)
@@ -164,7 +162,6 @@ class ComposeDataset(Dataset):
                         truncation=True,
                         max_length=self.max_mod_token_len,
                         return_tensors="pt",
-                        add_special_tokens=False,
                     )
                     mod_inputs_ids = mod_tokenized["input_ids"].squeeze(0)
                     all_mod_input_ids.append(mod_inputs_ids)

@@ -78,7 +78,7 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
             text_last_hidden = self.blip_model.forward_text(attention_mask=attn_mask,
                                                             learned_embeds=learned_embeds,
                                                             query_tokens=fusion_processed)
-            text_processed = text_last_hidden[1:, :query_tokens.size(1) + 1, :]
+            text_processed = text_last_hidden[:, 1:query_tokens.size(1) + 1, :]
             query_tokens = self.blip_model.query_proj(fusion_processed + text_processed)
             fusion_feats = F.normalize((self.blip_model.text_proj(query_tokens[:, -1, :])), dim=-1)
 
@@ -132,7 +132,7 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
 
         target_feats = samples["target_feats"]
         n_turns = samples["n_turns"]  # (B,)
-        images = samples["images"]  # (6, B, 3, 225, 225)
+        images = samples["images"]  # (6, B, 3, 224, 224)
         cap_input_ids = samples["cap_input_ids"]  # (6, B, 32)
         cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 32)
         mod_input_ids = samples["mod_input_ids"]  # (5, B, 40)
@@ -188,7 +188,7 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
             text_last_hidden = self.blip_model.forward_text(attention_mask=attn_mask,
                                                             learned_embeds=learned_embeds,
                                                             query_tokens=fusion_processed)
-            text_processed = text_last_hidden[1:, :query_tokens.size(1) + 1, :]
+            text_processed = text_last_hidden[:, 1:query_tokens.size(1) + 1, :]
             query_tokens = self.blip_model.query_proj(fusion_processed + text_processed)
 
             if turn_i == 1:
@@ -463,64 +463,6 @@ class MultiHeadAttention(nn.Module):
             updated_kv = None
 
         return attn_output, updated_kv
-
-
-"""
-class TextualHistoryEncoder(nn.Module):
-    def __init__(self, len_turn):
-        super().__init__()
-        self.bert = BertModel.from_pretrained("bert-base-uncased")
-        self.len_turn = len_turn
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.linear_proj = nn.Linear(self.bert.config.hidden_size, self.bert.config.hidden_size)
-        self.max_turn = 5
-
-    def forward(self, samples, n_turns):
-        batch_size = len(n_turns)
-
-        all_input_ids = []
-        all_attention_mask = []
-
-        for i in range(batch_size):
-            n_turn = n_turns[i]
-            n_pad = (self.max_turn - n_turn) * self.len_turn
-
-            sample_mod_input_ids = []
-            sample_mod_attention_mask = []
-            for j in range(self.max_turn):
-                sample_mod_input_ids.append(samples["mod_input_ids"][j][i])
-                sample_mod_attention_mask.append(samples["mod_attention_mask"][j][i])
-
-            sample_mod_input_ids = torch.cat(sample_mod_input_ids, dim=0).view(1, -1)
-            sample_mod_attention_mask = torch.cat(sample_mod_attention_mask, dim=0).view(1, -1)
-
-            if n_turn < self.max_turn:
-                sample_mod_input_ids[:, -n_pad:] = 0
-                sample_mod_attention_mask[:, -n_pad:] = 0
-
-            all_input_ids.append(sample_mod_input_ids)
-            all_attention_mask.append(sample_mod_attention_mask)
-
-        all_input_ids = torch.cat(all_input_ids, dim=0).to(self.device)  # (B, 200)
-        all_attention_mask = torch.cat(all_attention_mask, dim=0).to(self.device)  # (B, 200)
-
-        text_output = self.bert(
-            all_input_ids,
-            attention_mask=all_attention_mask,
-            return_dict=True
-        )
-
-        text_output_last_hidden = text_output.last_hidden_state
-
-        text_output_last_hidden_processed = []
-        for i in range(batch_size):
-            n = n_turns[i]
-            start = self.len_turn * (n - 1)
-            end = self.len_turn * n
-            text_output_last_hidden_processed.append(text_output_last_hidden[i, start:end, :])
-        text_output_processed = torch.stack(text_output_last_hidden_processed, dim=0)
-        return text_output_processed
-"""
 
 
 class PoolingProjector(nn.Module):

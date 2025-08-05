@@ -198,33 +198,6 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
 
         return loss_total / images[0].size(0)
 
-    def fine_tune(self, output_dict):
-        """
-        :param output_dict:
-        : - last_fusion_processed: (B, N, 768)
-        : - learned_modifier_tokens: (B, N-1, 768)
-        : - tar_fusion_feats: (B, 256)
-        :return: last turn loss
-        """
-        last_fusion_processed = output_dict["last_fusion_processed"]
-        learned_modifier_tokens = output_dict["learned_modifier_tokens"]
-        tar_fusion_feats = output_dict["last_tar_fusion_feats"]
-
-        query_atts = torch.ones((learned_modifier_tokens.size(0), learned_modifier_tokens.size(1) + 1),
-                                dtype=torch.long).to(self.device)
-        attention_mask = torch.cat([query_atts, query_atts], dim=1)
-        text_output = self.bertLM.bert(
-            query_embeds=last_fusion_processed,  # [b, 32, 768]
-            attention_mask=attention_mask,
-            return_dict=True,
-            learned_embeds=learned_modifier_tokens
-        )
-        text_processed = text_output.last_hidden_state[:, : last_fusion_processed.size(1), :]
-        query_tokens = self.query_proj(last_fusion_processed + text_processed)
-        fusion_feats = F.normalize((self.text_proj(query_tokens[:, -1, :])), dim=-1)
-        total_loss = self.BBC_loss(fusion_feats.to(self.device), tar_fusion_feats.to(self.device)).sum()
-        return total_loss / last_fusion_processed.size(0)
-
     def forward_fusion(self, attention_mask, query_tokens, input_ids=None, image_embeds=None, image_atts=None,
                        no_img=False, learned_embeds=None):
         if no_img:  # mod_text_output
@@ -260,15 +233,16 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
     def forward_text(self, attention_mask, learned_embeds, query_tokens):
         text_output = self.bertLM.bert(
             query_embeds=query_tokens,  # [b, 32, 768]
-            attention_mask=attention_mask,
-            learned_embeds=learned_embeds,
+            attention_mask=attention_mask,  # [b, 64]
+            learned_embeds=learned_embeds,  # [b, 31, 768]
             return_dict=True,
         )
         text_processed = text_output.last_hidden_state
         return text_processed
 
     @torch.no_grad()
-    def forward_history(self, samples):
+    def inference(self, samples):
+        target_feats = samples["target_feats"]
         n_turns = samples["n_turns"]
         images = samples["images"]  # (6, B, 3, 225, 225)
         cap_input_ids = samples["cap_input_ids"]  # (6, B, 32)
@@ -288,29 +262,14 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
         cap_input_ids = [input_id.to(self.device) for input_id in cap_input_ids]
         mod_input_ids = [input_id.to(self.device) for input_id in mod_input_ids]
 
-        last_ref_fusion_feats_all = torch.zeros(
+        last_fusion_feats_all = torch.zeros(
             images[0].size(0), self.text_proj.out_features, device=self.device
-        )
-        last_ref_fusion_processed_all = torch.zeros(
-            images[0].size(0), self.num_query_token, self.Qformer.config.hidden_size, device=self.device
-        )
-        last_tar_fusion_feats_all = torch.zeros(
-            images[0].size(0), self.text_proj.out_features, device=self.device
-        )
-        last_tar_fusion_processed_all = torch.zeros(
-            images[0].size(0), self.num_query_token, self.Qformer.config.hidden_size, device=self.device
         )
         first_fusion_feats_all = torch.zeros(
             images[0].size(0), self.text_proj.out_features, device=self.device
         )
-        first_fusion_processed_all = torch.zeros(
-            images[0].size(0), self.num_query_token, self.Qformer.config.hidden_size, device=self.device
-        )
         second_fusion_feats_all = torch.zeros(
             images[0].size(0), self.text_proj.out_features, device=self.device
-        )
-        second_fusion_processed_all = torch.zeros(
-            images[0].size(0), self.num_query_token, self.Qformer.config.hidden_size, device=self.device
         )
         query_tokens = None
         for turn_i in range(1, self.max_turn + 1):
@@ -325,13 +284,11 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
                 query_tokens = cached_query_tokens.clone()
 
             query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
-            tar_query_tokens = cached_query_tokens.clone()
-            tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
-            attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
+            attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
+            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
             fusion_output = self.Qformer.bert(
-                cap_input_ids[turn_i - 1][:query_tokens.size(1)],
+                cap_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=query_tokens,
                 attention_mask=ref_cap_attn_mask,
                 encoder_hidden_states=image_embeds,  # cross attention
@@ -340,7 +297,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             )
             fusion_processed = fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
             text_output = self.bertLM.bert(
-                mod_input_ids[turn_i - 1][:query_tokens.size(1)],
+                mod_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=fusion_processed,  # [b, 32, 768]
                 attention_mask=attention_mask,
                 return_dict=True,
@@ -348,52 +305,18 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             text_processed = text_output.last_hidden_state[:, : query_tokens.size(1), :]
             query_tokens = self.query_proj(fusion_processed + text_processed)
 
-            target_img_embeds = image_feats[turn_i]
-            target_img_atts = image_atts_list[turn_i]
-
-            tar_attention_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:query_tokens.size(1)]], dim=1)
-            tar_fusion_output = self.Qformer.bert(
-                cap_input_ids[turn_i][:query_tokens.size(1)],
-                query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
-                attention_mask=tar_attention_mask,
-                encoder_hidden_states=target_img_embeds,  # cross attention
-                encoder_attention_mask=target_img_atts,
-                return_dict=True,
-            )
-            tar_fusion_processed = tar_fusion_output.last_hidden_state[:, : tar_query_tokens.size(1), :]
-
             if turn_i == 1:
                 first_fusion_feats_all = F.normalize(self.text_proj(query_tokens[:, -1, :]), dim=-1)
-                first_fusion_processed_all = fusion_processed
             elif turn_i == 2:
                 second_fusion_feats_all = F.normalize(self.text_proj(query_tokens[:, -1, :]), dim=-1)
-                second_fusion_processed_all = fusion_processed
             if final_mask.sum() > 0:
-                last_ref_fusion_processed_all[final_mask] = fusion_processed[final_mask]
-                last_tar_fusion_processed_all[final_mask] = tar_fusion_processed[final_mask]
-
                 selected_feats = self.text_proj(query_tokens[:, -1, :])[final_mask]
                 projected_feats = F.normalize(selected_feats, dim=-1)
-                last_ref_fusion_feats_all[final_mask] = projected_feats
+                last_fusion_feats_all[final_mask] = projected_feats
 
-                tar_selected_feats = self.target_proj(tar_fusion_processed[:, -1, :])[final_mask]
-                tar_projected_feats = F.normalize(tar_selected_feats, dim=-1)
-                last_tar_fusion_feats_all[final_mask] = tar_projected_feats
-
-        return {
-            "first": (first_fusion_processed_all, first_fusion_feats_all),
-            "second": (second_fusion_processed_all, second_fusion_feats_all),
-            "last_ref": (last_ref_fusion_processed_all, last_ref_fusion_feats_all),
-            "last_tar": (last_tar_fusion_processed_all, last_tar_fusion_feats_all)
-        }
-
-    @torch.no_grad()
-    def inference(self, samples):
-        target_feats = samples["target_feats"]
-        history_dict = self.forward_history(samples)
-        first_sim_matrix = self.compute_distance_matrix(history_dict["first"][1].to(self.device), target_feats)
-        second_sim_matrix = self.compute_distance_matrix(history_dict["second"][1].to(self.device), target_feats)
-        last_sim_matrix = self.compute_distance_matrix(history_dict["last_ref"][1].to(self.device), target_feats)
+        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all.to(self.device), target_feats)
+        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all.to(self.device), target_feats)
+        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all.to(self.device), target_feats)
         return first_sim_matrix, second_sim_matrix, last_sim_matrix
 
     @torch.no_grad()
