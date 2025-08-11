@@ -57,20 +57,23 @@ def export_transactions_json(transactions, split="train", name="convergence"):
                            "n_turns": t["n_turns"],
                            "turn-1": t["turn-1"],
                            "turn-2": t["turn-2"],
-                           "turn-3": t["turn-3"]} for t in transactions if t["n_turns"] == 3]
+                           "turn-3": t["turn-3"],
+                           "probs": t["last_turn_probs"]} for t in transactions if t["n_turns"] == 3]
     transactions_turn4 = [{"id": t["turn-1"]["source_img_id"],
                            "n_turns": t["n_turns"],
                            "turn-1": t["turn-1"],
                            "turn-2": t["turn-2"],
                            "turn-3": t["turn-3"],
-                           "turn-4": t["turn-4"]} for t in transactions if t["n_turns"] == 4]
+                           "turn-4": t["turn-4"],
+                           "probs": t["last_turn_probs"]} for t in transactions if t["n_turns"] == 4]
     transactions_turn5 = [{"id": t["turn-1"]["source_img_id"],
                            "n_turns": t["n_turns"],
                            "turn-1": t["turn-1"],
                            "turn-2": t["turn-2"],
                            "turn-3": t["turn-3"],
                            "turn-4": t["turn-4"],
-                           "turn-5": t["turn-5"]} for t in transactions if t["n_turns"] == 5]
+                           "turn-5": t["turn-5"],
+                           "probs": t["last_turn_probs"]} for t in transactions if t["n_turns"] == 5]
 
     transactions = transactions_turn3 + transactions_turn4 + transactions_turn5
 

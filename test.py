@@ -33,13 +33,9 @@ def test(cfg, **kwargs):
         print(f"Loading checkpoint from epoch{cfg['resume_path']}")
         checkpoint = torch.load(cfg["resume_path"], map_location=device)  # todo
 
-        model_key = "Blip2QformerGatedAttention"
-        # model_key = "RetrospectiveMultiTurnCirModel"
+        model_key = "Blip2QformerCirAlignRetrospective"
         if model_key in checkpoint:
             state_dict = checkpoint[model_key]
-
-            state_dict['Qformer.cls.predictions.bias'] = state_dict['Qformer.cls.predictions.bias'][:30522]
-            state_dict['bertLM.cls.predictions.bias'] = state_dict['bertLM.cls.predictions.bias'][:30522]
 
             missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
             print(f"Successfully loaded state_dict from key '{model_key}'")
@@ -90,4 +86,4 @@ if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if config["dataset"] == "200k":
-        test(config, stage="combination", device=device)
+        test(config, stage="rollback", device=device)

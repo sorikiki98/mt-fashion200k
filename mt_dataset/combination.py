@@ -23,6 +23,15 @@ def extract_previous_captions(results):
     return results
 
 
+def extract_last_turn_probs(results):
+    n_turns = results["n_turns"]
+    last_key = f"turn-{n_turns}"
+    last_result = results[last_key]
+    probs = last_result["probs"]
+    results["last_turn_probs"] = probs
+    return results
+
+
 class Fashion200kCombination(Fashion200k):
     def __init__(self, path, seed=155, split="train"):
         super().__init__(path, seed, split)
@@ -53,7 +62,9 @@ class Fashion200kCombination(Fashion200k):
                             if result5 is not None:
                                 results = {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                            "turn-4": result4, "turn-5": result5}
-                                self.transactions.append(extract_previous_captions(results))
+                                results = extract_previous_captions(results)
+                                results = extract_last_turn_probs(results)
+                                self.transactions.append(results)
                             else:
                                 result4 = self.combination_(results.copy()[:3], result3["mod_type"].copy(),
                                                             result3["add_type"].copy(),
@@ -61,7 +72,9 @@ class Fashion200kCombination(Fashion200k):
                                 if result4 is not None:
                                     results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                                "turn-4": result4}
-                                    self.transactions.append(extract_previous_captions(results))
+                                    results = extract_previous_captions(results)
+                                    results = extract_last_turn_probs(results)
+                                    self.transactions.append(results)
                                 else:
                                     result3 = self.combination_(results.copy()[:2], result2["mod_type"].copy(),
                                                                 result2["add_type"].copy(),
@@ -69,7 +82,9 @@ class Fashion200kCombination(Fashion200k):
                                     if result3 is not None:
                                         results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
                                                    "turn-3": result3}
-                                        self.transactions.append(extract_previous_captions(results))
+                                        results = extract_previous_captions(results)
+                                        results = extract_last_turn_probs(results)
+                                        self.transactions.append(results)
                         else:
                             result4 = self.combination_(results.copy()[:3], result3["mod_type"].copy(),
                                                         result3["add_type"].copy(),
@@ -77,7 +92,9 @@ class Fashion200kCombination(Fashion200k):
                             if result4 is not None:
                                 results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                            "turn-4": result4}
-                                self.transactions.append(extract_previous_captions(results))
+                                results = extract_previous_captions(results)
+                                results = extract_last_turn_probs(results)
+                                self.transactions.append(results)
                     else:
                         result3 = self.combination_(results.copy()[:2], result2["mod_type"].copy(),
                                                     result2["add_type"].copy(),
@@ -85,7 +102,9 @@ class Fashion200kCombination(Fashion200k):
                         if result3 is not None:
                             results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
                                        "turn-3": result3}
-                            self.transactions.append(extract_previous_captions(results))
+                            results = extract_previous_captions(results)
+                            results = extract_last_turn_probs(results)
+                            self.transactions.append(results)
 
     def __len__(self):
         return len(self.transactions)
@@ -439,6 +458,9 @@ class Fashion200kCombination(Fashion200k):
         target_caption = self.get_caption(target_caption_id)
         target_idx = random.choice(self.caption2imgids[target_caption])
         template = random.choice(combination)
+        probs = [1] * (n_turn - 1) + [0] * (6 - n_turn)
+        probs[int(c_turn1) - 1] = 0
+        probs[int(c_turn2) - 1] = 0
         mod_str = f"Turn {n_turn}: " + template.format(n_turn1=c_turn1, n_turn2=c_turn2, attr_type1=attr_type1,
                                                        attr_type2=attr_type2, old_attr=source_word,
                                                        new_attr=target_word)
@@ -455,7 +477,8 @@ class Fashion200kCombination(Fashion200k):
             "mod_str": mod_str,
             "mod_type": mod_type,
             "add_type": add_type,
-            "c_turn": [c_turn1, c_turn2]
+            "c_turn": [c_turn1, c_turn2],
+            "probs": probs
         }
 
     def add_single_turn(self, idx, source_tuple, target_tuple, mod_type, add_type, n_turn):

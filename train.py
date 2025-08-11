@@ -8,7 +8,6 @@ from tqdm import tqdm
 from lavis.models import load_model_and_preprocess
 from mt_dataset import targetpad_transform, ComposeDataset
 from utils import AverageMeter, save_model, setup_seed
-from retrospection import RetrospectiveMultiTurnCirModel
 
 
 def train(cfg, **kwargs):
@@ -18,27 +17,18 @@ def train(cfg, **kwargs):
     if stage != "convergence" and stage != "combination" and stage != "rollback" and stage != "retrospective":
         raise ValueError("Stage should be in ['convergence', 'combination', 'rollback', 'retrospective']")
 
-    blip_model, _, txt_processors = load_model_and_preprocess(
+    model, _, txt_processors = load_model_and_preprocess(
         name=cfg["blip_model_name"], model_type="pretrain", is_eval=False, device=device
     )
-
-    if stage == "retrospective":
-        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
-        model.to(device)
-    else:
-        model = blip_model
 
     start_epoch = 0
     if "resume_path" in cfg and cfg["resume_path"]:
         print(f"Loading checkpoint from epoch{cfg['resume_path']}")
         checkpoint = torch.load(cfg["resume_path"], map_location=device)  # todo
 
-        model_key = "RetrospectiveMultiTurnCirModel"
+        model_key = "Blip2QformerCirAlignRetrospective"
         if model_key in checkpoint:
             state_dict = checkpoint[model_key]
-
-            # state_dict['Qformer.cls.predictions.bias'] = state_dict['Qformer.cls.predictions.bias'][:30522]
-            # state_dict['bertLM.cls.predictions.bias'] = state_dict['bertLM.cls.predictions.bias'][:30522]
 
             missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
             print(f"Successfully loaded state_dict from key '{model_key}'")
@@ -68,10 +58,6 @@ def train(cfg, **kwargs):
         shuffle=True,
         persistent_workers=False
     )
-
-    for name, param in model.named_parameters():
-        if torch.isnan(param).any() or torch.isinf(param).any():
-            print(f"Found NaN/Inf in {name}")
 
     optimizer = optim.AdamW(
         [
@@ -114,6 +100,7 @@ def train(cfg, **kwargs):
             cap_input_ids = samples.get("cap_input_ids")
             cap_attention_mask = samples.get("cap_attention_mask")
             n_turns = samples.get("n_turns")
+            probs = samples.get("probs")
 
             if cfg["dataset"] == "200k":
                 try:
@@ -124,7 +111,8 @@ def train(cfg, **kwargs):
                              "mod_input_ids": mod_input_ids,
                              "mod_attention_mask": mod_attention_mask,
                              "cap_input_ids": cap_input_ids,
-                             "cap_attention_mask": cap_attention_mask
+                             "cap_attention_mask": cap_attention_mask,
+                             "probs": probs
                              }
                         )
 
@@ -136,6 +124,16 @@ def train(cfg, **kwargs):
                 except Exception as e:
                     print("❌ error occurred:", e)
                     raise
+
+            if idx % 10 == 0:
+                print(
+                    "Train Epoch ({0}): [{0}]\t"
+                    "Loss {loss.val:.4f} ({loss.avg:.4f})\t".format(
+                        idx,
+                        epoch,
+                        loss=losses,
+                    )
+                )
         if epoch % cfg["validation_frequency"] == 0:
             print(
                 "Train Epoch: [{0}]\t"

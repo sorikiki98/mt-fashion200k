@@ -1,7 +1,18 @@
 import random
+import time
+
 from fashion200k import Fashion200k
 from fashion_words import colors, items, material, pattern, silhouettes, structures, details, style, functionalities
 from fashion_prompts import rollback, replacement, addition
+
+
+def extract_last_turn_probs(results):
+    n_turns = results["n_turns"]
+    last_key = f"turn-{n_turns}"
+    last_result = results[last_key]
+    probs = last_result["probs"]
+    results["last_turn_probs"] = probs
+    return results
 
 
 class Fashion200kRollback(Fashion200k):
@@ -30,41 +41,46 @@ class Fashion200kRollback(Fashion200k):
                             result5 = self.rollback_(results.copy()[:4], result4["mod_type"].copy(),
                                                      result4["add_type"].copy(), 5)
                             if result5 is not None:
-                                self.transactions.append(
-                                    {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                     "turn-4": result4, "turn-5": result5})
+                                results = {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                           "turn-4": result4, "turn-5": result5}
+                                results = extract_last_turn_probs(results)
+                                self.transactions.append(results)
                             else:
                                 result4 = self.rollback_(results.copy()[:3], result3["mod_type"].copy(),
                                                          result3["add_type"].copy(),
                                                          4)
                                 if result4 is not None:
-                                    self.transactions.append(
-                                        {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                         "turn-4": result4})
+                                    results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                               "turn-4": result4}
+                                    results = extract_last_turn_probs(results)
+                                    self.transactions.append(results)
                                 else:
                                     result3 = self.rollback_(results.copy()[:2], result2["mod_type"].copy(),
                                                              result2["add_type"].copy(),
                                                              3)
                                     if result3 is not None:
-                                        self.transactions.append(
-                                            {"n_turns": 3, "turn-1": result1, "turn-2": result2,
-                                             "turn-3": result3})
+                                        results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
+                                                   "turn-3": result3}
+                                        results = extract_last_turn_probs(results)
+                                        self.transactions.append(results)
                         else:
                             result4 = self.rollback_(results.copy()[:3], result3["mod_type"].copy(),
                                                      result3["add_type"].copy(),
                                                      4)
                             if result4 is not None:
-                                self.transactions.append(
-                                    {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                     "turn-4": result4})
+                                results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                           "turn-4": result4}
+                                results = extract_last_turn_probs(results)
+                                self.transactions.append(results)
                     else:
                         result3 = self.rollback_(results.copy()[:2], result2["mod_type"].copy(),
                                                  result2["add_type"].copy(),
                                                  3)
                         if result3 is not None:
-                            self.transactions.append(
-                                {"n_turns": 3, "turn-1": result1, "turn-2": result2,
-                                 "turn-3": result3})
+                            results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
+                                       "turn-3": result3}
+                            results = extract_last_turn_probs(results)
+                            self.transactions.append(results)
 
     def __len__(self):
         return len(self.transactions)
@@ -230,13 +246,17 @@ class Fashion200kRollback(Fashion200k):
         mod_attrs = ["color", "item", "pattern", "structure", "silhouette", "detail", "material", "style",
                      "functionality"]
         add_attrs = mod_attrs.copy()
-        for i in range(1, n_turn):
+
+        candidates = list(range(1, n_turn))
+        rng = random.Random(time.time())
+        shuffled = rng.sample(candidates, len(candidates))
+        for i in shuffled:
             filtered_mod_type = [mod.split("-")[0] for mod in mod_type if int(mod.split("-")[1]) >= i]
             available_mod_attrs = [attr for attr in mod_attrs if attr not in filtered_mod_type]
             filtered_add_type = [add.split("-")[0] for add in add_type if int(add.split("-")[1]) >= i]
             available_add_attrs = [attr for attr in add_attrs if attr not in filtered_add_type]
-            recent_caption = results[i-1]["source_caption"]
-            src_idx = results[i-1]["source_img_id"]
+            recent_caption = results[i - 1]["source_caption"]
+            src_idx = results[i - 1]["source_img_id"]
 
             for c in recent_caption.split():
                 if c in colors and "color" in available_mod_attrs and "color" in available_add_attrs:
@@ -377,6 +397,8 @@ class Fashion200kRollback(Fashion200k):
         target_caption = self.get_caption(target_caption_id)
         target_idx = random.choice(self.caption2imgids[target_caption])
         template = random.choice(rollback)
+        probs = [1] * (n_turn - 1) + [0] * (6 - n_turn)
+        probs[int(r_turn) - 1:] = [0] * (6 - r_turn)
         mod_str = f"Turn {n_turn}: " + template.format(n_turn=r_turn, old_attr=source_word, new_attr=target_word)
         return {
             "source_img_id": idx,
@@ -390,7 +412,8 @@ class Fashion200kRollback(Fashion200k):
             "mod_str": mod_str,
             "mod_type": mod_type,
             "add_type": add_type,
-            "r_turn": r_turn
+            "r_turn": r_turn,
+            "probs": probs
         }
 
     def add_single_turn(self, idx, source_tuple, target_tuple, mod_type, add_type, n_turn):

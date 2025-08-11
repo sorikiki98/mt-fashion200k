@@ -94,8 +94,7 @@ class ComposeDataset(Dataset):
             elif stage == "combination":
                 self.transactions = combination
             else:
-                self.transactions = rollback
-                # self.transactions = combination
+                self.transactions = convergence + rollback + combination
             if split == "test":
                 self.image_names, self.image_captions = extract_image_names_and_captions(self.data_root, split)
 
@@ -111,6 +110,7 @@ class ComposeDataset(Dataset):
         if self.mode == "relative":
             transaction = self.transactions[index]
             n_turns = transaction["n_turns"]
+            probs = transaction["probs"]
 
             ref_path = str(Path(self.data_root) / transaction["turn-1"]["source_img_path"])
             try:
@@ -207,15 +207,26 @@ class ComposeDataset(Dataset):
                     all_tar_input_ids.append(tar_input_ids)
                     tar_attn_mask = tar_cap_tokenized["attention_mask"].squeeze(0)
                     all_tar_attn_mask.append(tar_attn_mask)
-            return {
-                "n_turns": n_turns,
-                "pil_images": [ref_img] + tar_imgs,
-                "mod_input_ids": all_mod_input_ids,
-                "mod_attention_mask": all_mod_attn_mask,
-                "cap_input_ids": [ref_input_ids] + all_tar_input_ids,
-                "cap_attention_mask": [ref_attn_mask] + all_tar_attn_mask,
-                "image_paths": [ref_path] + tar_paths
-            }
+            if self.split == "train":
+                return {
+                    "n_turns": n_turns,
+                    "pil_images": [ref_img] + tar_imgs,
+                    "mod_input_ids": all_mod_input_ids,
+                    "mod_attention_mask": all_mod_attn_mask,
+                    "cap_input_ids": [ref_input_ids] + all_tar_input_ids,
+                    "cap_attention_mask": [ref_attn_mask] + all_tar_attn_mask,
+                    "probs": probs
+                }
+            else:
+                return {
+                    "n_turns": n_turns,
+                    "pil_images": [ref_img] + tar_imgs,
+                    "mod_input_ids": all_mod_input_ids,
+                    "mod_attention_mask": all_mod_attn_mask,
+                    "cap_input_ids": [ref_input_ids] + all_tar_input_ids,
+                    "cap_attention_mask": [ref_attn_mask] + all_tar_attn_mask,
+                    "image_paths": [ref_path] + tar_paths,
+                }
         elif self.mode == "classic":
             image_path = str(Path(self.data_root) / self.image_names[index])
             image_name = image_path
