@@ -32,6 +32,9 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
         cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 32)
         mod_input_ids = samples["mod_input_ids"]  # (5, B, 40)
         mod_attention_mask = samples["mod_attention_mask"]  # (5, B, 40)
+        rollback_img_ids = samples["rollback_img_id"]
+        rollback_captions = samples["rollback_caption"]
+        combination_captions = samples["combination_caption"]
 
         cached_query_tokens = self.blip_model.query_tokens.expand(images[0].size(0), -1, -1)
 
@@ -78,7 +81,7 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
             text_last_hidden = self.blip_model.forward_text(attention_mask=attn_mask,
                                                             learned_embeds=learned_embeds,
                                                             query_tokens=fusion_processed)
-            text_processed = text_last_hidden[1:, :query_tokens.size(1) + 1, :]
+            text_processed = text_last_hidden[:, 1:query_tokens.size(1) + 1, :]
             query_tokens = self.blip_model.query_proj(fusion_processed + text_processed)
             fusion_feats = F.normalize((self.blip_model.text_proj(query_tokens[:, -1, :])), dim=-1)
 
@@ -188,7 +191,7 @@ class RetrospectiveMultiTurnCirModel(nn.Module):
             text_last_hidden = self.blip_model.forward_text(attention_mask=attn_mask,
                                                             learned_embeds=learned_embeds,
                                                             query_tokens=fusion_processed)
-            text_processed = text_last_hidden[1:, :query_tokens.size(1) + 1, :]
+            text_processed = text_last_hidden[:, 1:query_tokens.size(1) + 1, :]
             query_tokens = self.blip_model.query_proj(fusion_processed + text_processed)
 
             if turn_i == 1:

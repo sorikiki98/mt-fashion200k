@@ -18,8 +18,15 @@ def extract_previous_captions(results):
     turn2_result = results[turn2_key]
     caption2 = turn2_result["source_caption"]
 
-    results[last_key]["combination_caption"] = [caption1, caption2]
+    caption_list = [caption1, caption2]
+    results[last_key]["combination_caption"] = " ".join(caption_list)
 
+    return results
+
+
+def add_transaction_types(results):
+    results["rollback"] = False
+    results["combination"] = True
     return results
 
 
@@ -53,7 +60,9 @@ class Fashion200kCombination(Fashion200k):
                             if result5 is not None:
                                 results = {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                            "turn-4": result4, "turn-5": result5}
-                                self.transactions.append(extract_previous_captions(results))
+                                results = extract_previous_captions(results)
+                                results = add_transaction_types(results)
+                                self.transactions.append(results)
                             else:
                                 result4 = self.combination_(results.copy()[:3], result3["mod_type"].copy(),
                                                             result3["add_type"].copy(),
@@ -61,7 +70,9 @@ class Fashion200kCombination(Fashion200k):
                                 if result4 is not None:
                                     results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                                "turn-4": result4}
-                                    self.transactions.append(extract_previous_captions(results))
+                                    results = extract_previous_captions(results)
+                                    results = add_transaction_types(results)
+                                    self.transactions.append(results)
                                 else:
                                     result3 = self.combination_(results.copy()[:2], result2["mod_type"].copy(),
                                                                 result2["add_type"].copy(),
@@ -69,7 +80,9 @@ class Fashion200kCombination(Fashion200k):
                                     if result3 is not None:
                                         results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
                                                    "turn-3": result3}
-                                        self.transactions.append(extract_previous_captions(results))
+                                        results = extract_previous_captions(results)
+                                        results = add_transaction_types(results)
+                                        self.transactions.append(results)
                         else:
                             result4 = self.combination_(results.copy()[:3], result3["mod_type"].copy(),
                                                         result3["add_type"].copy(),
@@ -77,15 +90,18 @@ class Fashion200kCombination(Fashion200k):
                             if result4 is not None:
                                 results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                            "turn-4": result4}
-                                self.transactions.append(extract_previous_captions(results))
+                                results = extract_previous_captions(results)
+                                results = add_transaction_types(results)
+                                self.transactions.append(results)
                     else:
                         result3 = self.combination_(results.copy()[:2], result2["mod_type"].copy(),
                                                     result2["add_type"].copy(),
                                                     3)
                         if result3 is not None:
-                            results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
-                                       "turn-3": result3}
-                            self.transactions.append(extract_previous_captions(results))
+                            results = {"n_turns": 3, "turn-1": result1, "turn-2": result2, "turn-3": result3}
+                            results = extract_previous_captions(results)
+                            results = add_transaction_types(results)
+                            self.transactions.append(results)
 
     def __len__(self):
         return len(self.transactions)

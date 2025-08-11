@@ -67,6 +67,7 @@ class ComposeDataset(Dataset):
         self.data_root = cfg["data_path"]
         self.max_cap_token_len = cfg["max_cap_token_len"]
         self.max_mod_token_len = cfg["max_mod_token_len"]
+        self.model_name = cfg["blip_model_name"]
         self.mode = mode
         self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased",
                                                        truncation_side="right",
@@ -129,7 +130,10 @@ class ComposeDataset(Dataset):
             all_tar_input_ids = []
             all_tar_attn_mask = []
 
-            dummy_img = torch.zeros(3, self.img_preprocess.transforms[1].size, self.img_preprocess.transforms[1].size)
+            dummy_img = torch.zeros(3, self.img_preprocess.transforms[1].size,
+                                    self.img_preprocess.transforms[1].size)
+            dummy_input_ids = torch.zeros(self.max_cap_token_len, )
+            dummy_attention_mask = torch.zeros(self.max_cap_token_len)
             ref_caption = transaction["turn-1"]["source_caption"]
             ref_cap_tokenized = self.tokenizer(
                 ref_caption,
@@ -140,6 +144,15 @@ class ComposeDataset(Dataset):
             )
             ref_input_ids = ref_cap_tokenized["input_ids"].squeeze(0)
             ref_attn_mask = ref_cap_tokenized["attention_mask"].squeeze(0)
+
+            rollback_input_ids = dummy_input_ids
+            rollback_attn_mask = dummy_attention_mask
+            rollback_img = dummy_img
+            combination_input_ids = dummy_input_ids
+            combination_attn_mask = dummy_attention_mask
+
+            is_rollback = transaction["rollback"]
+            is_combination = transaction["combination"]
 
             for i in range(1, 6):  # turn-1 ~ turn-5
                 if i <= n_turns:
@@ -210,6 +223,39 @@ class ComposeDataset(Dataset):
                     all_tar_input_ids.append(tar_input_ids)
                     tar_attn_mask = tar_cap_tokenized["attention_mask"].squeeze(0)
                     all_tar_attn_mask.append(tar_attn_mask)
+                if i == n_turns:
+                    tar_key = f"turn-{i}"
+                    if is_rollback:
+                        if "rollback_img_path" in transaction[tar_key] and "rollback_caption" in transaction[tar_key]:
+                            rollback_img_path = transaction[tar_key]["rollback_img_path"]
+                            try:
+                                rollback_img = self.img_preprocess(PIL.Image.open(rollback_img_path))
+                            except Exception as e:
+                                print(f"[Index {index}] Failed to load target image {rollback_img_path}: {e}")
+                                raise
+                            rollback_caption = transaction[tar_key]["rollback_caption"]
+                            rollback_cap_tokenized = self.tokenizer(
+                                rollback_caption,
+                                padding="max_length",
+                                truncation=True,
+                                max_length=self.max_cap_token_len,
+                                return_tensors="pt",
+                            )
+                            rollback_input_ids = rollback_cap_tokenized["input_ids"].squeeze(0)
+                            rollback_attn_mask = rollback_cap_tokenized["attention_mask"].squeeze(0)
+                    elif is_combination:
+                        if "combination_caption" in transaction[tar_key]:
+                            combination_caption = transaction[tar_key]["combination_caption"]
+                            combination_cap_tokenized = self.tokenizer(
+                                combination_caption,
+                                padding="max_length",
+                                truncation=True,
+                                max_length=self.max_cap_token_len,
+                                return_tensors="pt",
+                            )
+                            combination_input_ids = combination_cap_tokenized["input_ids"].squeeze(0)
+                            combination_attn_mask = combination_cap_tokenized["attention_mask"].squeeze(0)
+
             return {
                 "n_turns": n_turns,
                 "pil_images": [ref_img] + tar_imgs,
@@ -217,7 +263,14 @@ class ComposeDataset(Dataset):
                 "mod_attention_mask": all_mod_attn_mask,
                 "cap_input_ids": [ref_input_ids] + all_tar_input_ids,
                 "cap_attention_mask": [ref_attn_mask] + all_tar_attn_mask,
-                "image_paths": [ref_path] + tar_paths
+                "image_paths": [ref_path] + tar_paths,
+                "is_rollback": is_rollback,
+                "is_combination": is_combination,
+                "rollback_input_ids": rollback_input_ids,  # for MAI
+                "rollback_attention_mask": rollback_attn_mask,  # for MAI
+                "rollback_images": rollback_img,  # for MAI
+                "combination_input_ids": combination_input_ids,  # for MAI
+                "combination_attention_mask": combination_attn_mask  # for MAI
             }
         elif self.mode == "classic":
             image_path = str(Path(self.data_root) / self.image_names[index])

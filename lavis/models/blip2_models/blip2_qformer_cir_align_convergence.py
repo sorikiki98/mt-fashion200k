@@ -124,11 +124,11 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             tar_query_tokens = cached_query_tokens.clone()
             tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
-            attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:query_tokens.size(1)]], dim=1)
+            attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
+            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
 
             fusion_output = self.Qformer.bert(
-                cap_input_ids[turn_i - 1][:query_tokens.size(1)],
+                cap_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=query_tokens,
                 attention_mask=ref_cap_attn_mask,
                 encoder_hidden_states=image_embeds,
@@ -137,21 +137,22 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             )
             fusion_processed = fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
             text_output = self.bertLM.bert(
-                mod_input_ids[turn_i - 1][:query_tokens.size(1)],
+                mod_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=fusion_processed,  # [b, 32, 768]
                 attention_mask=attention_mask,
                 return_dict=True,
             )
-            text_processed = text_output.last_hidden_state[:, : query_tokens.size(1), :]
+            text_processed = text_output.last_hidden_state[:, 1: query_tokens.size(1) + 1, :]
             query_tokens = self.query_proj(fusion_processed + text_processed)
             fusion_feats = F.normalize((self.text_proj(query_tokens[:, -1, :])), dim=-1)
 
             target_img_embeds = image_feats[turn_i]
             target_img_atts = image_atts_list[turn_i]
 
-            tar_attention_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:query_tokens.size(1)]], dim=1)
+            tar_attention_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:, :query_tokens.size(1)]],
+                                           dim=1)
             tar_fusion_output = self.Qformer.bert(
-                cap_input_ids[turn_i][:query_tokens.size(1)],
+                cap_input_ids[turn_i][:, :query_tokens.size(1)],
                 query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
                 attention_mask=tar_attention_mask,
                 encoder_hidden_states=target_img_embeds,  # cross attention
@@ -164,7 +165,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
 
             tar_text_tokens = self.prompt_tokens.expand(image_embeds.shape[0], -1, -1)
             tar_text_output = self.Qformer.bert(
-                cap_input_ids[turn_i][:query_tokens.size(1)],
+                cap_input_ids[turn_i][:, :query_tokens.size(1)],
                 query_embeds=tar_text_tokens,
                 attention_mask=tar_attention_mask,
                 return_dict=True,
@@ -175,7 +176,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             mod_text_tokens = self.prompt_tokens.expand(
                 image_embeds.shape[0], -1, -1)
             mod_text_output = self.Qformer.bert(
-                mod_input_ids[turn_i - 1][:query_tokens.size(1)],
+                mod_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=mod_text_tokens,
                 attention_mask=attention_mask,
                 return_dict=True,
@@ -351,9 +352,9 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             target_img_embeds = image_feats[turn_i]
             target_img_atts = image_atts_list[turn_i]
 
-            tar_attention_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:query_tokens.size(1)]], dim=1)
+            tar_attention_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:tar_query_tokens.size(1)]], dim=1)
             tar_fusion_output = self.Qformer.bert(
-                cap_input_ids[turn_i][:query_tokens.size(1)],
+                cap_input_ids[turn_i][:tar_query_tokens.size(1)],
                 query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
                 attention_mask=tar_attention_mask,
                 encoder_hidden_states=target_img_embeds,  # cross attention

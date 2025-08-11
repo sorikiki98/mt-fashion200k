@@ -4,6 +4,28 @@ from fashion_words import colors, items, material, pattern, silhouettes, structu
 from fashion_prompts import rollback, replacement, addition
 
 
+def extract_previous_captions(results):
+    n_turns = results["n_turns"]
+    last_key = f"turn-{n_turns}"
+    last_result = results[last_key]
+    r_turn = last_result["r_turn"]
+    turn_key = f"turn-{r_turn}"
+    turn_result = results[turn_key]
+    caption = turn_result["source_caption"]
+    img_path = turn_result["source_img_path"]
+
+    results[last_key]["rollback_caption"] = caption
+    results[last_key]["rollback_img_path"] = img_path
+
+    return results
+
+
+def add_transaction_types(results):
+    results["rollback"] = True
+    results["combination"] = False
+    return results
+
+
 class Fashion200kRollback(Fashion200k):
     def __init__(self, path, seed=71, split="train"):
         super().__init__(path, seed, split)
@@ -30,41 +52,51 @@ class Fashion200kRollback(Fashion200k):
                             result5 = self.rollback_(results.copy()[:4], result4["mod_type"].copy(),
                                                      result4["add_type"].copy(), 5)
                             if result5 is not None:
-                                self.transactions.append(
-                                    {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                     "turn-4": result4, "turn-5": result5})
+                                results = {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                           "turn-4": result4, "turn-5": result5}
+                                results = extract_previous_captions(results)
+                                results = add_transaction_types(results)
+                                self.transactions.append(results)
                             else:
                                 result4 = self.rollback_(results.copy()[:3], result3["mod_type"].copy(),
                                                          result3["add_type"].copy(),
                                                          4)
                                 if result4 is not None:
-                                    self.transactions.append(
-                                        {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                         "turn-4": result4})
+                                    results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                               "turn-4": result4}
+                                    results = extract_previous_captions(results)
+                                    results = add_transaction_types(results)
+                                    self.transactions.append(results)
                                 else:
                                     result3 = self.rollback_(results.copy()[:2], result2["mod_type"].copy(),
                                                              result2["add_type"].copy(),
                                                              3)
                                     if result3 is not None:
-                                        self.transactions.append(
-                                            {"n_turns": 3, "turn-1": result1, "turn-2": result2,
-                                             "turn-3": result3})
+                                        results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
+                                                   "turn-3": result3}
+                                        results = extract_previous_captions(results)
+                                        results = add_transaction_types(results)
+                                        self.transactions.append(results)
                         else:
                             result4 = self.rollback_(results.copy()[:3], result3["mod_type"].copy(),
                                                      result3["add_type"].copy(),
                                                      4)
                             if result4 is not None:
-                                self.transactions.append(
-                                    {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                     "turn-4": result4})
+                                results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                           "turn-4": result4}
+                                results = extract_previous_captions(results)
+                                results = add_transaction_types(results)
+                                self.transactions.append(results)
                     else:
                         result3 = self.rollback_(results.copy()[:2], result2["mod_type"].copy(),
                                                  result2["add_type"].copy(),
                                                  3)
                         if result3 is not None:
-                            self.transactions.append(
-                                {"n_turns": 3, "turn-1": result1, "turn-2": result2,
-                                 "turn-3": result3})
+                            results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
+                                       "turn-3": result3}
+                            results = extract_previous_captions(results)
+                            results = add_transaction_types(results)
+                            self.transactions.append(results)
 
     def __len__(self):
         return len(self.transactions)
@@ -235,8 +267,8 @@ class Fashion200kRollback(Fashion200k):
             available_mod_attrs = [attr for attr in mod_attrs if attr not in filtered_mod_type]
             filtered_add_type = [add.split("-")[0] for add in add_type if int(add.split("-")[1]) >= i]
             available_add_attrs = [attr for attr in add_attrs if attr not in filtered_add_type]
-            recent_caption = results[i-1]["source_caption"]
-            src_idx = results[i-1]["source_img_id"]
+            recent_caption = results[i - 1]["source_caption"]
+            src_idx = results[i - 1]["source_img_id"]
 
             for c in recent_caption.split():
                 if c in colors and "color" in available_mod_attrs and "color" in available_add_attrs:

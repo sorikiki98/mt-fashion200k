@@ -4,6 +4,12 @@ from fashion_words import colors, items, material, pattern, silhouettes, structu
 from fashion_prompts import replacement, addition
 
 
+def add_transaction_types(results):
+    results["rollback"] = False
+    results["combination"] = False
+    return results
+
+
 class Fashion200kConvergence(Fashion200k):
     def __init__(self, path, seed=42, split="train"):
         super().__init__(path, seed, split)
@@ -25,16 +31,19 @@ class Fashion200kConvergence(Fashion200k):
                             result5 = self.turn3_sample_(result4["target_img_id"], result4["mod_type"].copy(),
                                                          result4["add_type"].copy(), 5)
                             if result5 is not None:
-                                self.transactions.append(
-                                    {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                     "turn-4": result4, "turn-5": result5})
+                                results = {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                           "turn-4": result4, "turn-5": result5}
+                                results = add_transaction_types(results)
+                                self.transactions.append(results)
                             else:
-                                self.transactions.append(
-                                    {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
-                                     "turn-4": result4})
+                                results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
+                                           "turn-4": result4}
+                                results = add_transaction_types(results)
+                                self.transactions.append(results)
                         else:
-                            self.transactions.append(
-                                {"n_turns": 3, "turn-1": result1, "turn-2": result2, "turn-3": result3})
+                            results = {"n_turns": 3, "turn-1": result1, "turn-2": result2, "turn-3": result3}
+                            results = add_transaction_types(results)
+                            self.transactions.append(results)
 
     def __len__(self):
         return len(self.transactions)

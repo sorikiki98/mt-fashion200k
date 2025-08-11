@@ -16,12 +16,19 @@ def test_compose(cfg, **kwargs):
     device = kwargs["device"]
     stage = kwargs["stage"]
 
-    if stage != "convergence" and stage != "combination" and stage != "rollback" and stage != "combination":
-        raise ValueError("Stage should be in ['convergence', 'combination', 'rollback', 'combination']")
+    if stage != "convergence" and stage != "combination" and stage != "rollback" and stage != "retrospective":
+        raise ValueError("Stage should be in ['convergence', 'combination', 'rollback', 'retrospective']")
 
     blip_model, _, txt_processors = load_model_and_preprocess(
         name=cfg["blip_model_name"], model_type="pretrain", is_eval=True, device=device
     )
+
+    if model_name == "blip2_qformer_cir_align_convergence" and stage == "retrospective":
+        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
+        model.to(device)
+    else:
+        model = blip_model
+
     try:
         checkpoint = torch.load(cfg["resume_path"], map_location=device)
         model_key = "RetrospectiveMultiTurnCirModel"  # todo
@@ -45,12 +52,6 @@ def test_compose(cfg, **kwargs):
                                          mode="classic",
                                          stage=stage,
                                          cfg=cfg)
-
-    if stage == "combination":
-        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
-        model.to(device)
-    else:
-        model = blip_model
 
     with torch.no_grad():
         blip_model.eval()

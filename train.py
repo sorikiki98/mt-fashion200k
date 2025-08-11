@@ -14,13 +14,20 @@ from retrospection import RetrospectiveMultiTurnCirModel
 def train(cfg, **kwargs):
     device = kwargs["device"]
     stage = kwargs["stage"]
+    model_name = cfg["blip_model_name"]
 
     if stage != "convergence" and stage != "combination" and stage != "rollback" and stage != "retrospective":
         raise ValueError("Stage should be in ['convergence', 'combination', 'rollback', 'retrospective']")
 
     blip_model, _, txt_processors = load_model_and_preprocess(
-        name=cfg["blip_model_name"], model_type="pretrain", is_eval=False, device=device
+        name=model_name, model_type="pretrain", is_eval=False, device=device
     )
+
+    if model_name == "blip2_qformer_cir_align_convergence" and stage == "retrospective":
+        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
+        model.to(device)
+    else:
+        model = blip_model
 
     start_epoch = 0
     if "resume_path" in cfg and cfg["resume_path"]:
@@ -65,16 +72,6 @@ def train(cfg, **kwargs):
         persistent_workers=True
     )
 
-    if stage == "retrospective":
-        model = RetrospectiveMultiTurnCirModel(blip_model, cfg["max_mod_token_len"], cfg["max_turn"])
-        model.to(device)
-    else:
-        model = blip_model
-
-    for name, param in model.named_parameters():
-        if torch.isnan(param).any() or torch.isinf(param).any():
-            print(f"Found NaN/Inf in {name}")
-
     optimizer = optim.AdamW(
         [
             {
@@ -117,6 +114,15 @@ def train(cfg, **kwargs):
             cap_attention_mask = samples.get("cap_attention_mask")
             n_turns = samples.get("n_turns")
 
+            is_rollback = samples.get("is_rollback")
+            is_combination = samples.get("is_combination")
+
+            rollback_input_ids = samples.get("rollback_input_ids")
+            rollback_attention_mask = samples.get("rollback_attention_mask")
+            rollback_images = samples.get("rollback_images")
+            combination_input_ids = samples.get("combination_input_ids")
+            combination_attention_mask = samples.get("combination_attention_mask")
+
             if cfg["dataset"] == "200k":
                 try:
                     with torch.cuda.amp.autocast():
@@ -126,7 +132,14 @@ def train(cfg, **kwargs):
                              "mod_input_ids": mod_input_ids,
                              "mod_attention_mask": mod_attention_mask,
                              "cap_input_ids": cap_input_ids,
-                             "cap_attention_mask": cap_attention_mask
+                             "cap_attention_mask": cap_attention_mask,
+                             "is_rollback": is_rollback,
+                             "is_combination": is_combination,
+                             "rollback_input_ids": rollback_input_ids,
+                             "rollback_attention_mask": rollback_attention_mask,
+                             "rollback_images": rollback_images,
+                             "combination_input_ids": combination_input_ids,
+                             "combination_attention_mask": combination_attention_mask
                              }
                         )
 
