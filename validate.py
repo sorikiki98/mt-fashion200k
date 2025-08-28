@@ -150,13 +150,13 @@ def generate_blip_compose_multi(model, relative_val_dataset, index_features):
                 "mod_attention_mask": mod_attention_mask,
                 "cap_input_ids": cap_input_ids,
                 "cap_attention_mask": cap_attention_mask,
-                # "is_rollback": is_rollback,
-                # "is_combination": is_combination,
-                # "rollback_input_ids": rollback_input_ids,
-                # "rollback_attention_mask": rollback_attention_mask,
-                # "rollback_images": rollback_images,
-                # "combination_input_ids": combination_input_ids,
-                # "combination_attention_mask": combination_attention_mask
+                "is_rollback": is_rollback,
+                "is_combination": is_combination,
+                "rollback_input_ids": rollback_input_ids,
+                "rollback_attention_mask": rollback_attention_mask,
+                "rollback_images": rollback_images,
+                "combination_input_ids": combination_input_ids,
+                "combination_attention_mask": combination_attention_mask
             })
             first_similarity.append(batch_first_similarity)
             second_similarity.append(batch_second_similarity)

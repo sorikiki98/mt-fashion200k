@@ -93,19 +93,19 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
     def forward(self, samples):
         n_turns = samples["n_turns"]  # (B,)
         images = samples["images"]  # (6, B, 3, 224, 224)
-        cap_input_ids = samples["cap_input_ids"]  # (6, B, 40)
-        cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 40)
+        cap_input_ids = samples["cap_input_ids"]  # (6, B, 20)
+        cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 20)
         mod_input_ids = samples["mod_input_ids"]  # (5, B, 40)
         mod_attention_mask = samples["mod_attention_mask"]  # (5, B, 40)
 
         is_rollback = samples["is_rollback"]  # (B,)
         is_combination = samples["is_combination"]  # (B,)
 
-        rollback_input_ids = samples["rollback_input_ids"].to(self.device)  # (B, 40)
-        rollback_attention_mask = samples["rollback_attention_mask"].to(self.device)  # (B, 40)
+        rollback_input_ids = samples["rollback_input_ids"].to(self.device)  # (B, 20)
+        rollback_attention_mask = samples["rollback_attention_mask"].to(self.device)  # (B, 20)
         rollback_images = samples["rollback_images"]  # (B, 3, 224, 224)
-        combination_input_ids = samples["combination_input_ids"].to(self.device)  # (B, 40)
-        combination_attention_mask = samples["combination_attention_mask"].to(self.device)  # (B, 40)
+        combination_input_ids = samples["combination_input_ids"].to(self.device)  # (B, 20)
+        combination_attention_mask = samples["combination_attention_mask"].to(self.device)  # (B, 20)
 
         cached_query_tokens = self.query_tokens.expand(images[0].size(0), -1, -1)
 
@@ -271,9 +271,9 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
     def inference(self, samples):
         target_feats = samples["target_feats"]
         n_turns = samples["n_turns"]  # (B,)
-        images = samples["images"]  # (6, B, 3, 225, 225)
-        cap_input_ids = samples["cap_input_ids"]  # (6, B, 32)
-        cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 32)
+        images = samples["images"]  # (6, B, 3, 224, 224)
+        cap_input_ids = samples["cap_input_ids"]  # (6, B, 20)
+        cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 20)
         mod_input_ids = samples["mod_input_ids"]  # (5, B, 40)
         mod_attention_mask = samples["mod_attention_mask"]  # (5, B, 40)
         batch_size = images[0].size(0)
@@ -281,11 +281,11 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
         is_rollback = samples["is_rollback"]  # (B,)
         is_combination = samples["is_combination"]  # (B,)
 
-        rollback_input_ids = samples["rollback_input_ids"]  # (B, 40)
-        rollback_attention_mask = samples["rollback_attention_mask"]  # (B, 40)
+        rollback_input_ids = samples["rollback_input_ids"]  # (B, 20)
+        rollback_attention_mask = samples["rollback_attention_mask"]  # (B, 20)
         rollback_images = samples["rollback_images"]  # (B, 3, 224, 224)
-        combination_input_ids = samples["combination_input_ids"]  # (B, 40)
-        combination_attention_mask = samples["combination_attention_mask"]  # (B, 40)
+        combination_input_ids = samples["combination_input_ids"]  # (B, 20)
+        combination_attention_mask = samples["combination_attention_mask"]  # (B, 20)
 
         cached_query_tokens = self.query_tokens.expand(batch_size, -1, -1)
 
@@ -329,17 +329,17 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
 
             query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
 
-            attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
-            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
+            attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1]], dim=1)
+            ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1]], dim=1)
 
-            base_input_ids = cap_input_ids[turn_i - 1][:, :query_tokens.size(1)].clone()
+            base_input_ids = cap_input_ids[turn_i - 1].clone()
             base_attn_mask = ref_cap_attn_mask.clone()
 
-            rollback_input = rollback_input_ids[:, :query_tokens.size(1)]
-            rollback_mask = rollback_attention_mask[:, :query_tokens.size(1)]
+            rollback_input = rollback_input_ids
+            rollback_mask = rollback_attention_mask
 
-            combination_input = combination_input_ids[:, :query_tokens.size(1)]
-            combination_mask = combination_attention_mask[:, :query_tokens.size(1)]
+            combination_input = combination_input_ids
+            combination_mask = combination_attention_mask
 
             rollback_mask_broadcast = rollback_mask_bool.unsqueeze(1).expand_as(base_input_ids)
             combination_mask_broadcast = combination_mask_bool.unsqueeze(1).expand_as(base_input_ids)
@@ -430,9 +430,9 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
 
         tar_query_tokens = self.query_tokens.expand(image_embeds_frozen.shape[0], -1, -1)
         tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
-        tar_cap_attn_mask = torch.cat([tar_query_atts, cap_attention_mask[:, :tar_query_tokens.size(1)]], dim=1)
+        tar_cap_attn_mask = torch.cat([tar_query_atts, cap_attention_mask], dim=1)
         tar_fusion_output = self.Qformer.bert(
-            cap_input_ids[:, :tar_query_tokens.size(1)],
+            cap_input_ids,
             query_embeds=tar_query_tokens,
             attention_mask=tar_cap_attn_mask,
             encoder_hidden_states=image_embeds_frozen,  # cross attention
