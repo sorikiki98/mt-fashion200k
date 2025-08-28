@@ -88,6 +88,8 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
         return loss
 
     def forward(self, samples):
+        device = self.device
+
         n_turns = samples["n_turns"]
         images = samples["images"]  # (6, B, 3, 224, 224)
         cap_input_ids = samples["cap_input_ids"]  # (6, B, 8)
@@ -97,24 +99,24 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
         batch_size = images[0].size(0)
 
         probs = list(zip(*samples["probs"]))
-        probs = torch.tensor([list(row) for row in probs]).float().to(self.device)
+        probs = torch.tensor([list(row) for row in probs]).float().to(device)
 
         query_tokens = self.query_tokens.expand(batch_size, -1, -1)
-        query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
+        query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(device)
 
-        mod_attention_mask = [attn.to(self.device) for attn in mod_attention_mask]
-        cap_attention_mask = [attn.to(self.device) for attn in cap_attention_mask]
+        mod_attention_mask = [attn.to(device) for attn in mod_attention_mask]
+        cap_attention_mask = [attn.to(device) for attn in cap_attention_mask]
 
-        cap_input_ids = [input_id.to(self.device) for input_id in cap_input_ids]
-        mod_input_ids = [input_id.to(self.device) for input_id in mod_input_ids]
+        cap_input_ids = [input_id.to(device) for input_id in cap_input_ids]
+        mod_input_ids = [input_id.to(device) for input_id in mod_input_ids]
 
         with torch.no_grad():
-            images = [img.to(self.device, non_blocking=True) for img in images]
+            images = [img.to(device, non_blocking=True) for img in images]
             image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in images]
             image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
 
         loss_total = 0
-        loss_per_sample = torch.zeros(batch_size, device=self.device)
+        loss_per_sample = torch.zeros(batch_size, device=device)
         gating_loss_total = 0
 
         ref_image_embeds = image_feats[0]
@@ -134,7 +136,7 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
         tar_query_tokens = self.query_tokens.expand(batch_size, -1, -1)
 
         for turn_i in range(1, self.max_turn + 1):
-            target_gates = torch.zeros(batch_size, 5, device=self.device)
+            target_gates = torch.zeros(batch_size, 5, device=device)
             valid_mask = (n_turns >= turn_i)
             if valid_mask.sum() == 0:
                 continue
@@ -142,7 +144,7 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
             target_gates[final_mask] = probs[final_mask]
             not_final_mask = (n_turns != turn_i) & valid_mask
             if not_final_mask.sum() > 0:
-                temp_target = torch.zeros(5, device=self.device)
+                temp_target = torch.zeros(5, device=device)
                 temp_target[:turn_i - 1] = 1.0
                 target_gates[not_final_mask] = temp_target
 
@@ -160,7 +162,7 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
             fusion_processed = ref_fusion_processed
 
             for turn_j in range(1, turn_i + 1):
-                query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
+                query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(device)
                 mod_attn_mask = torch.cat([query_atts, mod_attention_mask[turn_j - 1]],
                                           dim=1)
                 tar_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_j]],
@@ -225,10 +227,10 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
                     mod_cap_feat = F.normalize(self.text_proj(mod_text_output.last_hidden_state[:, 0, :]), dim=-1)
 
                     loss_dict = {
-                        "loss_fus2tar": self.BBC_loss(fusion_feats.to(self.device), tar_fusion_feats.to(self.device)),
-                        'loss_fus2cap': self.BBC_loss(fusion_feats.to(self.device), tar_cap_text_feat.to(self.device)),
-                        'loss_mod2fus': self.BBC_loss(mod_cap_feat.to(self.device), tar_fusion_feats.to(self.device)),
-                        'loss_mod2cap': self.BBC_loss(mod_cap_feat.to(self.device), tar_cap_text_feat.to(self.device))
+                        "loss_fus2tar": self.BBC_loss(fusion_feats.to(device), tar_fusion_feats.to(device)),
+                        'loss_fus2cap': self.BBC_loss(fusion_feats.to(device), tar_cap_text_feat.to(device)),
+                        'loss_mod2fus': self.BBC_loss(mod_cap_feat.to(device), tar_fusion_feats.to(device)),
+                        'loss_mod2cap': self.BBC_loss(mod_cap_feat.to(device), tar_cap_text_feat.to(device))
                     }
 
                     loss_per_turn = sum(loss_dict.values())  # (batch_size,)
@@ -247,6 +249,8 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
 
     @torch.no_grad()
     def inference(self, samples):
+        device = self.device
+
         target_feats = samples["target_feats"]
         n_turns = samples["n_turns"]
         images = samples["images"]  # (6, B, 3, 225, 225)
@@ -258,18 +262,18 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
 
         cached_query_tokens = self.query_tokens.expand(batch_size, -1, -1)
 
-        images = [img.to(self.device, non_blocking=True) for img in images]
+        images = [img.to(device, non_blocking=True) for img in images]
         image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in images]
         image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
 
-        mod_attention_mask = [attn.to(self.device) for attn in mod_attention_mask]
-        cap_attention_mask = [attn.to(self.device) for attn in cap_attention_mask]
+        mod_attention_mask = [attn.to(device) for attn in mod_attention_mask]
+        cap_attention_mask = [attn.to(device) for attn in cap_attention_mask]
 
-        cap_input_ids = [input_id.to(self.device) for input_id in cap_input_ids]
-        mod_input_ids = [input_id.to(self.device) for input_id in mod_input_ids]
+        cap_input_ids = [input_id.to(device) for input_id in cap_input_ids]
+        mod_input_ids = [input_id.to(device) for input_id in mod_input_ids]
 
         query_tokens = cached_query_tokens.clone()
-        query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
+        query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(device)
 
         ref_image_embeds = image_feats[0]
         ref_image_atts = image_atts_list[0]
@@ -287,13 +291,13 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
         ref_fusion_processed = ref_fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
 
         last_fusion_feats_all = torch.zeros(
-            batch_size, self.text_proj.out_features, device=self.device
+            batch_size, self.text_proj.out_features, device=device
         )
         first_fusion_feats_all = torch.zeros(
-            batch_size, self.text_proj.out_features, device=self.device
+            batch_size, self.text_proj.out_features, device=device
         )
         second_fusion_feats_all = torch.zeros(
-            batch_size, self.text_proj.out_features, device=self.device
+            batch_size, self.text_proj.out_features, device=device
         )
         for turn_i in range(1, self.max_turn + 1):
             valid_mask = (n_turns >= turn_i)
@@ -310,7 +314,7 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
             fusion_processed = ref_fusion_processed
 
             for turn_j in range(1, turn_i + 1):
-                query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(self.device)
+                query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(device)
                 mod_attn_mask = torch.cat([query_atts, mod_attention_mask[turn_j - 1]],
                                           dim=1)
                 tar_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_j]],
@@ -349,23 +353,25 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
                     projected_feats = F.normalize(selected_feats, dim=-1)
                     last_fusion_feats_all[final_mask] = projected_feats
 
-        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all.to(self.device), target_feats)
-        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all.to(self.device), target_feats)
-        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all.to(self.device), target_feats)
+        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all.to(device), target_feats)
+        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all.to(device), target_feats)
+        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all.to(device), target_feats)
         return first_sim_matrix, second_sim_matrix, last_sim_matrix
 
     @torch.no_grad()
     def extract_target_features(self, images, cap_input_ids, cap_attention_mask):
+        device = self.device 
+
         with self.maybe_autocast():
             image_embeds_frozen = self.ln_vision(self.visual_encoder(images))
         image_embeds_frozen = image_embeds_frozen.float()
-        image_atts = torch.ones(image_embeds_frozen.size()[:-1], dtype=torch.long).to(self.device)
+        image_atts = torch.ones(image_embeds_frozen.size()[:-1], dtype=torch.long).to(device)
 
-        cap_input_ids = cap_input_ids.to(self.device)
-        cap_attention_mask = cap_attention_mask.to(self.device)  # (256, 32)
+        cap_input_ids = cap_input_ids.to(device)
+        cap_attention_mask = cap_attention_mask.to(device)  # (256, 32)
 
         tar_query_tokens = self.query_tokens.expand(image_embeds_frozen.shape[0], -1, -1)
-        tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(self.device)
+        tar_query_atts = torch.ones(tar_query_tokens.size()[:-1], dtype=torch.long).to(device)
 
         tar_cap_attn_mask = torch.cat([tar_query_atts, cap_attention_mask[:, :tar_query_tokens.size(1)]], dim=1)
 

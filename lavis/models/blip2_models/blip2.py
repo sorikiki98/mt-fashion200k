@@ -29,6 +29,21 @@ from transformers import BertTokenizer
 
 
 class Blip2Base(BaseModel):
+    def __init__(self):
+        super().__init__()
+        self._device = None
+
+    @property
+    def device(self):
+        if self._device is None:
+            # Get device from first parameter
+            self._device = next(self.parameters()).device
+        return self._device
+
+    @device.setter
+    def device(self, value):
+        self._device = value
+
     @classmethod
     def init_tokenizer(cls, truncation_side="right"):
         tokenizer = BertTokenizer.from_pretrained("bert-base-uncased",
@@ -36,10 +51,9 @@ class Blip2Base(BaseModel):
         return tokenizer
 
     def maybe_autocast(self, dtype=torch.float16):
-        # if on cpu, don't use autocast
-        # if on gpu, use autocast with dtype if provided, otherwise use torch.float16
-        enable_autocast = self.device != torch.device("cpu")
-
+        # Use current device instead of hardcoded check
+        enable_autocast = self.device.type == "cuda"
+        
         if enable_autocast:
             return torch.cuda.amp.autocast(dtype=dtype)
         else:
