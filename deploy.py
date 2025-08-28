@@ -81,12 +81,12 @@ def deploy(cfg, **kwargs):
         blip_model.eval()
         index_feats, index_names = extract_index_blip_fusion_features(classic_val_dataset, model)
 
-        first_dist, second_dist, last_dist, first_target, second_target, last_target = \
+        first_sim, second_sim, last_sim, first_target, second_target, last_target = \
         visualize_result_for_single_transaction(model, relative_val_dataset, index_feats, sample_idx)
         save_top_k_retrieval_results(
-            first_distance=first_dist,
-            second_distance=second_dist,
-            last_distance=last_dist,
+            first_similarity=first_sim,
+            second_similarity=second_sim,
+            last_similarity=last_sim,
             first_target_name=first_target,
             second_target_name=second_target,
             last_target_name=last_target,

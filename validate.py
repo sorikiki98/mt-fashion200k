@@ -59,17 +59,17 @@ def visualize_result_for_single_transaction(model, relative_val_dataset, index_f
     transaction = relative_val_dataset[sample_idx]
 
     images = transaction["pil_images"]  # list (6, 3, 224, 224)
-    images = [img.unsqueeze(0) for img in images]
+    images = [img.unsqueeze(0) for img in images]  # list (6, 1, 3, 224, 224)
     mod_input_ids = transaction["mod_input_ids"]  # list (5, 40)
-    mod_input_ids = [ids.unsqueeze(0) for ids in mod_input_ids]
+    mod_input_ids = [ids.unsqueeze(0) for ids in mod_input_ids]  # list (5, 1, 40)
     mod_attention_mask = transaction["mod_attention_mask"]  # list (5, 40)
-    mod_attention_mask = [mask.unsqueeze(0) for mask in mod_attention_mask]
-    cap_input_ids = transaction["cap_input_ids"]  # list (5, 12)
-    cap_input_ids = [ids.unsqueeze(0) for ids in cap_input_ids]
-    cap_attention_mask = transaction["cap_attention_mask"]  # list (5, 12)
-    cap_attention_mask = [mask.unsqueeze(0) for mask in cap_attention_mask]
-    n_turns = torch.tensor([transaction["n_turns"]]) # list 5
-    image_paths = transaction["image_paths"]  # list
+    mod_attention_mask = [mask.unsqueeze(0) for mask in mod_attention_mask]  # list (5, 1, 40)
+    cap_input_ids = transaction["cap_input_ids"]  # list (6, 12)
+    cap_input_ids = [ids.unsqueeze(0) for ids in cap_input_ids]  # list (6, 1, 12)
+    cap_attention_mask = transaction["cap_attention_mask"]  # list (6, 12)
+    cap_attention_mask = [mask.unsqueeze(0) for mask in cap_attention_mask]  # list (6, 1, 12)
+    n_turns = torch.tensor([transaction["n_turns"]])  # list 5
+    image_paths = transaction["image_paths"]  # list 6
 
     first_target_name = str(os.path.dirname(image_paths[1]))
     second_target_name = str(os.path.dirname(image_paths[2]))
@@ -81,7 +81,7 @@ def visualize_result_for_single_transaction(model, relative_val_dataset, index_f
         last_target_name = str(os.path.dirname(image_paths[5]))
 
     with torch.amp.autocast("cuda"):
-        first_distance, second_distance, last_distance = model.inference({
+        first_similarity, second_similarity, last_similarity = model.inference({
             "target_feats": index_features,
             "n_turns": n_turns,
             "images": images,
@@ -91,7 +91,7 @@ def visualize_result_for_single_transaction(model, relative_val_dataset, index_f
             "cap_attention_mask": cap_attention_mask,
         })
 
-    return first_distance, second_distance, last_distance, first_target_name, second_target_name, last_target_name
+    return first_similarity, second_similarity, last_similarity, first_target_name, second_target_name, last_target_name
 
 
 def generate_blip_compose_multi(model, relative_val_dataset, index_features):
@@ -106,9 +106,9 @@ def generate_blip_compose_multi(model, relative_val_dataset, index_features):
     first_target_names_list = []
     second_target_names_list = []
     last_target_names_list = []
-    first_distance = []
-    second_distance = []
-    last_distance = []
+    first_similarity = []
+    second_similarity = []
+    last_similarity = []
 
     for samples in tqdm(relative_val_loader, desc="Val"):
         images = samples.get("pil_images")
@@ -142,7 +142,7 @@ def generate_blip_compose_multi(model, relative_val_dataset, index_features):
                 last_target_names_list.append(str(os.path.dirname(image_paths[5][i])))
 
         with torch.amp.autocast("cuda"):
-            batch_first_distance, batch_second_distance, batch_last_distance = model.inference({
+            batch_first_similarity, batch_second_similarity, batch_last_similarity = model.inference({
                 "target_feats": index_features,
                 "n_turns": n_turns,
                 "images": images,
@@ -158,20 +158,20 @@ def generate_blip_compose_multi(model, relative_val_dataset, index_features):
                 # "combination_input_ids": combination_input_ids,
                 # "combination_attention_mask": combination_attention_mask
             })
-            first_distance.append(batch_first_distance)
-            second_distance.append(batch_second_distance)
-            last_distance.append(batch_last_distance)
-    first_distance = torch.vstack(first_distance).cpu()
-    second_distance = torch.vstack(second_distance).cpu()
-    last_distance = torch.vstack(last_distance).cpu()
-    return (first_distance, second_distance, last_distance, first_target_names_list, second_target_names_list,
+            first_similarity.append(batch_first_similarity)
+            second_similarity.append(batch_second_similarity)
+            last_similarity.append(batch_last_similarity)
+    first_similarity = torch.vstack(first_similarity).cpu()
+    second_similarity = torch.vstack(second_similarity).cpu()
+    last_similarity = torch.vstack(last_similarity).cpu()
+    return (first_similarity, second_similarity, last_similarity, first_target_names_list, second_target_names_list,
             last_target_names_list)
 
 
 def save_top_k_retrieval_results(
-        first_distance,
-        second_distance,
-        last_distance,
+        first_similarity,
+        second_similarity,
+        last_similarity,
         first_target_name,
         second_target_name,
         last_target_name,
@@ -179,32 +179,17 @@ def save_top_k_retrieval_results(
         output_dir="visualization_results",
         top_k=20
 ):
-    """
-    Save top-k retrieved images for each turn based on distances.
-
-    Args:
-        first_distance: Distance tensor for first turn
-        second_distance: Distance tensor for second turn
-        last_distance: Distance tensor for last turn
-        first_target_name: Target directory name for first turn
-        second_target_name: Target directory name for second turn
-        last_target_name: Target directory name for last turn
-        index_names: List of image paths in the index
-        output_dir: Directory to save results
-        top_k: Number of top results to save
-    """
-
     # Create output directory
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    def save_turn_results(distances, turn_name, target_name):
+    def save_turn_results(similarities, turn_name, target_name):
         """Helper function to save top-k images for a single turn."""
         # Convert to CPU and squeeze batch dimension
-        distances = distances.cpu().squeeze()
+        similarities = similarities.cpu().squeeze()
 
         # Get indices of top-k smallest distances
-        sorted_indices = torch.argsort(distances)[:top_k]
+        sorted_indices = torch.argsort(similarities, descending=True)[:top_k]
 
         # Create turn-specific directory
         turn_dir = output_dir / f"{turn_name}_top{top_k}"
@@ -215,7 +200,8 @@ def save_top_k_retrieval_results(
         for rank, idx in enumerate(sorted_indices):
             idx = idx.item()
             image_path = index_names[idx]
-            distance = distances[idx].item()
+            similarity = similarities[idx].item()
+            distance = 1 - similarity
 
             # Check if this is the correct match
             is_correct = (image_path == target_name)
@@ -258,16 +244,16 @@ def save_top_k_retrieval_results(
 
     print(f"Turn 1 (Target: {first_target_name})")
     print("-" * 40)
-    results["turn1"] = save_turn_results(first_distance, "turn1", first_target_name)
+    results["turn1"] = save_turn_results(first_similarity, "turn1", first_target_name)
 
     print(f"\nTurn 2 (Target: {second_target_name})")
     print("-" * 40)
-    results["turn2"] = save_turn_results(second_distance, "turn2", second_target_name)
+    results["turn2"] = save_turn_results(second_similarity, "turn2", second_target_name)
 
-    if last_distance is not None:
+    if last_similarity is not None:
         print(f"\nLast Turn (Target: {last_target_name})")
         print("-" * 40)
-        results["last"] = save_turn_results(last_distance, "last", last_target_name)
+        results["last"] = save_turn_results(last_similarity, "last", last_target_name)
 
     # Save summary file
     summary_path = output_dir / "retrieval_summary.txt"
@@ -283,7 +269,7 @@ def save_top_k_retrieval_results(
         f.write("-" * 40 + "\n")
         f.write(f"Turn 1: {first_target_name}\n")
         f.write(f"Turn 2: {second_target_name}\n")
-        if last_distance is not None:
+        if last_similarity is not None:
             f.write(f"Last Turn: {last_target_name}\n")
 
         f.write("\n" + "=" * 60 + "\n")
