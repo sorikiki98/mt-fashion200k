@@ -11,6 +11,12 @@ def extract_last_turn_probs(results):
     return results
 
 
+def add_transaction_types(results):
+    results["rollback"] = False
+    results["combination"] = False
+    return results
+
+
 class Fashion200kConvergence(Fashion200k):
     def __init__(self, path, seed=42, split="train"):
         super().__init__(path, seed, split)
@@ -35,15 +41,18 @@ class Fashion200kConvergence(Fashion200k):
                                 results = {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                            "turn-4": result4, "turn-5": result5}
                                 results = extract_last_turn_probs(results)
+                                results = add_transaction_types(results)
                                 self.transactions.append(results)
                             else:
                                 results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                            "turn-4": result4}
                                 results = extract_last_turn_probs(results)
+                                results = add_transaction_types(results)
                                 self.transactions.append(results)
                         else:
                             results = {"n_turns": 3, "turn-1": result1, "turn-2": result2, "turn-3": result3}
                             results = extract_last_turn_probs(results)
+                            results = add_transaction_types(results)
                             self.transactions.append(results)
 
     def __len__(self):

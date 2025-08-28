@@ -79,7 +79,7 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
         self.max_turn = max_turn
 
         self.gating = TurnGatingModule(vocab_size=len(self.tokenizer), max_turns=self.max_turn)
-        self.gating_loss_weight = nn.Parameter(torch.tensor(0.1))
+        self.gating_loss_weight = nn.Parameter(torch.tensor(1.0))
 
     def BBC_loss(self, feats1, feats2):
         logits = 100 * feats1 @ feats2.T  # (B, B)
@@ -89,9 +89,9 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
 
     def forward(self, samples):
         n_turns = samples["n_turns"]
-        images = samples["images"]  # (6, B, 3, 225, 225)
-        cap_input_ids = samples["cap_input_ids"]  # (6, B, 32)
-        cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 32)
+        images = samples["images"]  # (6, B, 3, 224, 224)
+        cap_input_ids = samples["cap_input_ids"]  # (6, B, 8)
+        cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 8)
         mod_input_ids = samples["mod_input_ids"]  # (5, B, 40)
         mod_attention_mask = samples["mod_attention_mask"]  # (5, B, 40)
         batch_size = images[0].size(0)
@@ -238,9 +238,10 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
                     filtered_loss = loss_per_sample[mask]
                     loss_total += filtered_loss.sum() / turn_i
 
-        main_loss = loss_total / batch_size
-        gating_weight = torch.sigmoid(self.gating_loss_weight)
-        total_loss = main_loss + gating_weight * gating_loss_total
+        main_loss_total = loss_total / batch_size
+        gating_loss_total = gating_loss_total / self.max_turn
+
+        total_loss = main_loss_total + gating_loss_total
 
         return total_loss
 

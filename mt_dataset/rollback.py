@@ -15,6 +15,28 @@ def extract_last_turn_probs(results):
     return results
 
 
+def extract_previous_captions(results):
+    n_turns = results["n_turns"]
+    last_key = f"turn-{n_turns}"
+    last_result = results[last_key]
+    r_turn = last_result["r_turn"]
+    turn_key = f"turn-{r_turn}"
+    turn_result = results[turn_key]
+    caption = turn_result["source_caption"]
+    img_path = turn_result["source_img_path"]
+
+    results[last_key]["rollback_caption"] = caption
+    results[last_key]["rollback_img_path"] = img_path
+
+    return results
+
+
+def add_transaction_types(results):
+    results["rollback"] = True
+    results["combination"] = False
+    return results
+
+
 class Fashion200kRollback(Fashion200k):
     def __init__(self, path, seed=71, split="train"):
         super().__init__(path, seed, split)
@@ -44,6 +66,8 @@ class Fashion200kRollback(Fashion200k):
                                 results = {"n_turns": 5, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                            "turn-4": result4, "turn-5": result5}
                                 results = extract_last_turn_probs(results)
+                                results = extract_previous_captions(results)
+                                results = add_transaction_types(results)
                                 self.transactions.append(results)
                             else:
                                 result4 = self.rollback_(results.copy()[:3], result3["mod_type"].copy(),
@@ -53,6 +77,8 @@ class Fashion200kRollback(Fashion200k):
                                     results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                                "turn-4": result4}
                                     results = extract_last_turn_probs(results)
+                                    results = extract_previous_captions(results)
+                                    results = add_transaction_types(results)
                                     self.transactions.append(results)
                                 else:
                                     result3 = self.rollback_(results.copy()[:2], result2["mod_type"].copy(),
@@ -62,6 +88,8 @@ class Fashion200kRollback(Fashion200k):
                                         results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
                                                    "turn-3": result3}
                                         results = extract_last_turn_probs(results)
+                                        results = extract_previous_captions(results)
+                                        results = add_transaction_types(results)
                                         self.transactions.append(results)
                         else:
                             result4 = self.rollback_(results.copy()[:3], result3["mod_type"].copy(),
@@ -71,6 +99,8 @@ class Fashion200kRollback(Fashion200k):
                                 results = {"n_turns": 4, "turn-1": result1, "turn-2": result2, "turn-3": result3,
                                            "turn-4": result4}
                                 results = extract_last_turn_probs(results)
+                                results = extract_previous_captions(results)
+                                results = add_transaction_types(results)
                                 self.transactions.append(results)
                     else:
                         result3 = self.rollback_(results.copy()[:2], result2["mod_type"].copy(),
@@ -80,6 +110,8 @@ class Fashion200kRollback(Fashion200k):
                             results = {"n_turns": 3, "turn-1": result1, "turn-2": result2,
                                        "turn-3": result3}
                             results = extract_last_turn_probs(results)
+                            results = extract_previous_captions(results)
+                            results = add_transaction_types(results)
                             self.transactions.append(results)
 
     def __len__(self):

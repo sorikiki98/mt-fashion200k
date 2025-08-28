@@ -5,6 +5,7 @@ import numpy as np
 import random
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from typing import Optional, Dict, Any
 
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -12,16 +13,58 @@ else:
     device = torch.device("cpu")
 
 
-def save_model(model_path: str, cur_epoch: int, model_to_save: nn.Module):
-    folder_path = os.path.dirname(model_path)
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
+def save_model(
+        model_path: str,
+        cur_epoch: int,
+        model_to_save: nn.Module,
+        *,
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
+        scaler: Optional[torch.amp.GradScaler] = None,
+        global_step: Optional[int] = None,
+        extra: Optional[Dict[str, Any]] = None,
+        save_rng_state: bool = True,
+):
 
-    model_name = model_to_save.__class__.__name__
-    torch.save({
-        'epoch': cur_epoch,
-        model_name: model_to_save.state_dict(),
-    }, model_path)
+    folder_path = os.path.dirname(model_path) or "."
+    os.makedirs(folder_path, exist_ok=True)
+
+    model = model_to_save.module if hasattr(model_to_save, "module") else model_to_save
+    model_name = model.__class__.__name__
+
+    state = {
+        "epoch": int(cur_epoch),
+        "model_class": model_name,
+        "model": model.state_dict(),  # 기존 key: model_name 대신 더 명확하게 "model"
+    }
+
+    if optimizer is not None:
+        state["optimizer"] = optimizer.state_dict()
+    if scheduler is not None:
+        state["scheduler"] = scheduler.state_dict()
+    if scaler is not None:
+        try:
+            state["scaler"] = scaler.state_dict()
+        except Exception:
+            pass  # CPU 학습 등일 때 무시
+
+    if global_step is not None:
+        state["global_step"] = int(global_step)
+
+    if save_rng_state:
+        try:
+            state["rng_state"] = {
+                "cpu": torch.get_rng_state(),
+                "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+            }
+        except Exception:
+            pass
+
+    if extra:
+        state["extra"] = extra
+
+    torch.save(state, model_path)
+    return model_path
 
 
 def setup_seed(seed):

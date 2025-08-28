@@ -8,13 +8,16 @@ import torch
 
 from lavis.models import load_model_and_preprocess
 from utils import setup_seed, extract_index_blip_fusion_features
-from validate import compute_blip_compose_multi
+from validate import visualize_result_for_single_transaction, save_top_k_retrieval_results
 from retrospection import RetrospectiveMultiTurnCirModel
 
+from PIL import Image
+from pathlib import Path
 
-def test(cfg, **kwargs):
+def deploy(cfg, **kwargs):
     device = kwargs["device"]
     stage = kwargs["stage"]
+    sample_idx = kwargs["sample_idx"]
 
     if stage != "convergence" and stage != "combination" and stage != "rollback" and stage != "retrospective":
         raise ValueError("Stage should be in ['convergence', 'combination', 'rollback', 'retrospective']")
@@ -74,17 +77,24 @@ def test(cfg, **kwargs):
                                          stage=stage,
                                          cfg=cfg)
 
-    with torch.no_grad():
+    with (torch.no_grad()):
         blip_model.eval()
         index_feats, index_names = extract_index_blip_fusion_features(classic_val_dataset, model)
 
-        recall_dict = compute_blip_compose_multi(relative_val_dataset, model, index_feats, index_names)
+        first_dist, second_dist, last_dist, first_target, second_target, last_target = \
+        visualize_result_for_single_transaction(model, relative_val_dataset, index_feats, sample_idx)
+        save_top_k_retrieval_results(
+            first_distance=first_dist,
+            second_distance=second_dist,
+            last_distance=last_dist,
+            first_target_name=first_target,
+            second_target_name=second_target,
+            last_target_name=last_target,
+            index_names=index_names,
+            output_dir="visualization_sample",
+            top_k=20
+        )
 
-        for k, (recall_at1, recall_at5, recall_at10, recall_at20) in recall_dict.items():
-            print(k, "*" * 40)
-            r_average = (recall_at1 + recall_at5 + recall_at10 + recall_at20) / 4
-            print("R@1:", recall_at1, "  R@5: ", recall_at5, "  R@10:", recall_at10, "  R@20: ", recall_at20)
-            print("Mean Now: ", r_average, "*" * 30)
 
 
 if __name__ == '__main__':
@@ -97,4 +107,4 @@ if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if config["dataset"] == "200k":
-        test(config, stage="rollback", device=device)
+        deploy(config, stage="convergence", device=device, sample_idx=2660)

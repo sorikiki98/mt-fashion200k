@@ -18,7 +18,8 @@ def extract_previous_captions(results):
     turn2_result = results[turn2_key]
     caption2 = turn2_result["source_caption"]
 
-    results[last_key]["combination_caption"] = [caption1, caption2]
+    caption_list = [caption1, caption2]
+    results[last_key]["combination_caption"] = "FIRST: " + caption_list[0] + " SECOND: " + caption_list[1]
 
     return results
 
@@ -29,6 +30,12 @@ def extract_last_turn_probs(results):
     last_result = results[last_key]
     probs = last_result["probs"]
     results["last_turn_probs"] = probs
+    return results
+
+
+def add_transaction_types(results):
+    results["rollback"] = False
+    results["combination"] = True
     return results
 
 
@@ -64,6 +71,7 @@ class Fashion200kCombination(Fashion200k):
                                            "turn-4": result4, "turn-5": result5}
                                 results = extract_previous_captions(results)
                                 results = extract_last_turn_probs(results)
+                                results = add_transaction_types(results)
                                 self.transactions.append(results)
                             else:
                                 result4 = self.combination_(results.copy()[:3], result3["mod_type"].copy(),
@@ -74,6 +82,7 @@ class Fashion200kCombination(Fashion200k):
                                                "turn-4": result4}
                                     results = extract_previous_captions(results)
                                     results = extract_last_turn_probs(results)
+                                    results = add_transaction_types(results)
                                     self.transactions.append(results)
                                 else:
                                     result3 = self.combination_(results.copy()[:2], result2["mod_type"].copy(),
@@ -84,6 +93,7 @@ class Fashion200kCombination(Fashion200k):
                                                    "turn-3": result3}
                                         results = extract_previous_captions(results)
                                         results = extract_last_turn_probs(results)
+                                        results = add_transaction_types(results)
                                         self.transactions.append(results)
                         else:
                             result4 = self.combination_(results.copy()[:3], result3["mod_type"].copy(),
@@ -94,6 +104,7 @@ class Fashion200kCombination(Fashion200k):
                                            "turn-4": result4}
                                 results = extract_previous_captions(results)
                                 results = extract_last_turn_probs(results)
+                                results = add_transaction_types(results)
                                 self.transactions.append(results)
                     else:
                         result3 = self.combination_(results.copy()[:2], result2["mod_type"].copy(),
@@ -104,6 +115,7 @@ class Fashion200kCombination(Fashion200k):
                                        "turn-3": result3}
                             results = extract_previous_captions(results)
                             results = extract_last_turn_probs(results)
+                            results = add_transaction_types(results)
                             self.transactions.append(results)
 
     def __len__(self):
@@ -294,14 +306,11 @@ class Fashion200kCombination(Fashion200k):
                 mod_attr1, mod_turn1 = mod_type1.split("-")
                 org_word1, mod_word1 = results[int(mod_turn1) - 1]["source_word"], results[int(mod_turn1) - 1][
                     "target_word"]
-                org_caption1 = results[int(mod_turn1) - 1]["source_caption"]
                 for j in range(i + 1, num_of_mods):
                     mod_type2 = mod_type[j]
                     mod_attr2, mod_turn2 = mod_type2.split("-")
                     org_word2, mod_word2 = results[int(mod_turn2) - 1]["source_word"], results[int(mod_turn2) - 1][
                         "target_word"]
-                    org_caption2 = results[int(mod_turn2) - 1]["source_caption"]
-                    concat_captions = "FIRST: " + org_caption1 + " SECOND: " + org_caption2
                     recent_caption = results[-1]["target_caption"]
                     recent_caption = recent_caption.replace(mod_word1, org_word1)
                     recent_caption = recent_caption.replace(mod_word2, org_word2)
