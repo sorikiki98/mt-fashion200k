@@ -353,9 +353,9 @@ class Blip2QformerCirAlignRetrospective(Blip2Base):
                     projected_feats = F.normalize(selected_feats, dim=-1)
                     last_fusion_feats_all[final_mask] = projected_feats
 
-        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all.to(device), target_feats)
-        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all.to(device), target_feats)
-        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all.to(device), target_feats)
+        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all, target_feats)
+        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all, target_feats)
+        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all, target_feats)
         return first_sim_matrix, second_sim_matrix, last_sim_matrix
 
     @torch.no_grad()

@@ -29,7 +29,7 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
             use_grad_checkpoint=False,
             vit_precision="fp16",
             freeze_vit=True,
-            num_query_token=40,
+            num_query_token=40,  # 32
             cross_attention_freq=2,
             embed_dim=256,
             max_txt_len=32,
@@ -296,7 +296,7 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
         mod_input_ids = [input_id.to(self.device) for input_id in mod_input_ids]
 
         images = [img.to(self.device, non_blocking=True) for img in images]
-        image_feats = [self.blip_model.ln_vision(self.blip_model.visual_encoder(img)).detach() for img in images]
+        image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in images]
         image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
 
         rollback_image = rollback_images.to(self.device, non_blocking=True)
@@ -413,9 +413,9 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
                 selected_feats = text_output.last_hidden_state[:, 32, :][final_mask]
                 projected_feats = F.normalize(self.text_proj(selected_feats), dim=-1)
                 last_fusion_feats_all[final_mask] = projected_feats
-        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all.to(self.device), target_feats)
-        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all.to(self.device), target_feats)
-        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all.to(self.device), target_feats)
+        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all, target_feats)
+        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all, target_feats)
+        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all, target_feats)
         return first_sim_matrix, second_sim_matrix, last_sim_matrix
 
     @torch.no_grad()
@@ -447,16 +447,13 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
         num_fusion = fusion_feats.size(0)
         num_target = target_feats.size(0)
         num_chunks = (num_target + chunk_size - 1) // chunk_size
-        # 初始化距离矩阵
         distance_matrix = torch.zeros(num_fusion, num_target).cpu()
-        # 分块计算
         for i in range(num_chunks):
             start = i * chunk_size
             end = min((i + 1) * chunk_size, num_target)
             chunk_target_feats = target_feats[start:end, :].to(device)
-            # 计算当前块与fusion_feats之间的距离矩阵
             chunk_distance = torch.matmul(fusion_feats, chunk_target_feats.T).detach().cpu()
-            distance_matrix[:, start:end] = chunk_distance  # 更新总距离矩阵
+            distance_matrix[:, start:end] = chunk_distance
         return distance_matrix
 
     @classmethod
