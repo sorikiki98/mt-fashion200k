@@ -159,6 +159,7 @@ class MTFashionIQ(Dataset):
                     "mod_input_ids": all_mod_input_ids,
                     "mod_attention_mask": all_mod_attn_mask,
                     "cap_input_ids": all_ref_input_ids + [tar_input_ids],
+                    "cap_attention_mask": all_ref_attn_mask + [tar_attn_mask]
                 }
             else:
                 return {
@@ -167,6 +168,7 @@ class MTFashionIQ(Dataset):
                     "mod_input_ids": all_mod_input_ids,
                     "mod_attention_mask": all_mod_attn_mask,
                     "cap_input_ids": all_ref_input_ids + [tar_input_ids],
+                    "cap_attention_mask": all_ref_attn_mask + [tar_attn_mask],
                     "image_paths": ref_paths + [tar_path],
                 }
 
