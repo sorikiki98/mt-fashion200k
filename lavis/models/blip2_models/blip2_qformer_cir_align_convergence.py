@@ -127,7 +127,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
             ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
 
-            fusion_output = self.Qformer.bert(
+            fusion_output = self.Qformer(
                 cap_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=query_tokens,
                 attention_mask=ref_cap_attn_mask,
@@ -136,7 +136,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
                 return_dict=True,
             )
             fusion_processed = fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
-            text_output = self.bertLM.bert(
+            text_output = self.bertLM(
                 mod_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=fusion_processed,  # [b, 32, 768]
                 attention_mask=attention_mask,
@@ -150,7 +150,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             target_img_atts = image_atts_list[turn_i]
 
             tar_attention_mask = torch.cat([tar_query_atts, cap_attention_mask[turn_i][:, :query_tokens.size(1)]], dim=1)
-            tar_fusion_output = self.Qformer.bert(
+            tar_fusion_output = self.Qformer(
                 cap_input_ids[turn_i][:, :query_tokens.size(1)],
                 query_embeds=tar_query_tokens,  # Qformer里query embeds和modifier_tokens会拼接
                 attention_mask=tar_attention_mask,
@@ -163,7 +163,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
                                            dim=-1)
 
             tar_text_tokens = self.prompt_tokens.expand(image_embeds.shape[0], -1, -1)
-            tar_text_output = self.Qformer.bert(
+            tar_text_output = self.Qformer(
                 cap_input_ids[turn_i][:, :query_tokens.size(1)],
                 query_embeds=tar_text_tokens,
                 attention_mask=tar_attention_mask,
@@ -174,7 +174,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
 
             mod_text_tokens = self.prompt_tokens.expand(
                 image_embeds.shape[0], -1, -1)
-            mod_text_output = self.Qformer.bert(
+            mod_text_output = self.Qformer(
                 mod_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=mod_text_tokens,
                 attention_mask=attention_mask,
@@ -202,7 +202,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
                        no_img=False, learned_embeds=None):
         if no_img:  # mod_text_output
             if learned_embeds is not None:
-                output = self.Qformer.bert(
+                output = self.Qformer(
                     query_embeds=query_tokens,
                     attention_mask=attention_mask,
                     return_dict=True,
@@ -210,7 +210,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
                 )
                 last_hidden_state = output.last_hidden_state
             else:  # tar_text_output
-                output = self.Qformer.bert(
+                output = self.Qformer(
                     input_ids,
                     query_embeds=query_tokens,
                     attention_mask=attention_mask,
@@ -219,7 +219,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
                 )
                 last_hidden_state = output.last_hidden_state
         else:  # (ref) fusion output
-            fusion_output = self.Qformer.bert(
+            fusion_output = self.Qformer(
                 input_ids,
                 query_embeds=query_tokens,
                 attention_mask=attention_mask,
@@ -229,16 +229,6 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
             )
             last_hidden_state = fusion_output.last_hidden_state
         return last_hidden_state
-
-    def forward_text(self, attention_mask, learned_embeds, query_tokens):
-        text_output = self.bertLM.bert(
-            query_embeds=query_tokens,  # [b, 32, 768]
-            attention_mask=attention_mask,  # [b, 64]
-            learned_embeds=learned_embeds,  # [b, 31, 768]
-            return_dict=True,
-        )
-        text_processed = text_output.last_hidden_state
-        return text_processed
 
     @torch.no_grad()
     def inference(self, samples):
@@ -287,7 +277,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
 
             attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
             ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_i - 1][:, :query_tokens.size(1)]], dim=1)
-            fusion_output = self.Qformer.bert(
+            fusion_output = self.Qformer(
                 cap_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=query_tokens,
                 attention_mask=ref_cap_attn_mask,
@@ -296,7 +286,7 @@ class Blip2QformerCirAlignConvergence(Blip2Base):
                 return_dict=True,
             )
             fusion_processed = fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
-            text_output = self.bertLM.bert(
+            text_output = self.bertLM(
                 mod_input_ids[turn_i - 1][:, :query_tokens.size(1)],
                 query_embeds=fusion_processed,  # [b, 32, 768]
                 attention_mask=attention_mask,

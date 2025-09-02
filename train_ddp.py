@@ -241,9 +241,9 @@ if __name__ == "__main__":
     print(f"Found {world_size} GPUs. Starting DDP training...")
     
     # Determine stage
-    stage = config.get("stage", "retrospective")
+    stage = config.get("stage", "convergence")
     if config["dataset"] == "200k":
-        stage = "retrospective"
+        stage = "convergence"
     
     # Launch DDP training
     mp.spawn(
