@@ -77,7 +77,7 @@ def setup_seed(seed):
 def extract_index_blip_fusion_features(dataset, model):
     classic_val_loader = DataLoader(
         dataset=dataset,
-        batch_size=256,
+        batch_size=512,
         num_workers=8,
         pin_memory=True,
         collate_fn=collate_fn,

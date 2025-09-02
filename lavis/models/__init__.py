@@ -14,6 +14,7 @@ from lavis.models.base_model import BaseModel
 
 from lavis.models.blip2_models.blip2 import Blip2Base
 from lavis.models.blip2_models.blip2_qformer_cir_align_prompt import Blip2QformerCirAlignPrompt
+from lavis.models.blip2_models.blip2_qformer_cir_align_prompt2 import Blip2QformerCirAlignPrompt2
 from lavis.models.blip2_models.blip2_qformer_cir_align_convergence import Blip2QformerCirAlignConvergence
 from lavis.models.blip2_models.blip2_qformer_cir_align_retrospective import Blip2QformerCirAlignRetrospective
 from lavis.models.blip2_models.blip2_qformer import Blip2Qformer
@@ -25,6 +26,7 @@ __all__ = [
     "BaseModel",
     "Blip2Qformer",
     "Blip2QformerCirAlignPrompt",
+    "Blip2QformerCirAlignPrompt2",
     "Blip2QformerCirAlignConvergence",
     "Blip2QformerCirAlignRetrospective",
     "VisionTransformerEncoder",

@@ -25,7 +25,7 @@ class CM_NTM(nn.Module):
         ])
 
         self.ntms = nn.ModuleList([
-            NTM(vector_length, hidden_size, memory_size, lstm_controller)
+            NTM(embed_dim, vector_length, hidden_size, memory_size, lstm_controller)
             for _ in range(num_ntms)
         ])
 
@@ -73,7 +73,7 @@ class CM_NTM(nn.Module):
 class NTM(nn.Module):
     def __init__(self, embed_dim, vector_length, hidden_size, memory_size, lstm_controller=True):
         super(NTM, self).__init__()
-        self.controller = Controller(lstm_controller, vector_length + 1 + memory_size[1], hidden_size)
+        self.controller = Controller(lstm_controller, vector_length + memory_size[1], hidden_size)
         self.memory = Memory(memory_size)
         self.read_head = ReadHead(self.memory, hidden_size)
         self.write_head = WriteHead(self.memory, hidden_size)

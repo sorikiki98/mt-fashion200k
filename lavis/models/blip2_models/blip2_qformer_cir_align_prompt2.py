@@ -19,7 +19,7 @@ from lavis.models.blip2_models.blip2 import (
 from ntm.ntm import CM_NTM
 
 
-@registry.register_model("blip2_cir_align_prompt2")
+@registry.register_model("blip2_qformer_cir_align_prompt2")
 class Blip2QformerCirAlignPrompt2(Blip2Base):
     PRETRAINED_MODEL_CONFIG_DICT = {
         "pretrain": "configs/models/blip2/blip2_pretrain.yaml",
@@ -125,7 +125,7 @@ class Blip2QformerCirAlignPrompt2(Blip2Base):
 
             attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1]], dim=1)
 
-            fusion_output = self.Qformer.bert(
+            fusion_output = self.Qformer(
                 mod_input_ids[turn_i - 1],
                 query_embeds=query_tokens,
                 attention_mask=attention_mask,
@@ -134,7 +134,7 @@ class Blip2QformerCirAlignPrompt2(Blip2Base):
                 return_dict=True,
             )
 
-            text_output = self.Qformer.bert(
+            text_output = self.Qformer(
                 mod_input_ids[turn_i - 1],
                 query_embeds=fusion_output.last_hidden_state[:, : query_tokens.size(1), :],
                 attention_mask=attention_mask,
@@ -151,7 +151,7 @@ class Blip2QformerCirAlignPrompt2(Blip2Base):
             target_img_embeds = image_feats[turn_i]
             target_img_atts = image_atts_list[turn_i]
 
-            target_output = self.Qformer.bert(
+            target_output = self.Qformer(
                 query_embeds=query_tokens,
                 encoder_hidden_states=target_img_embeds,
                 encoder_attention_mask=target_img_atts,
@@ -174,7 +174,7 @@ class Blip2QformerCirAlignPrompt2(Blip2Base):
 
             prompt_tokens = self.prompt_tokens.expand(batch_size, -1, -1)
 
-            text_only_output = self.Qformer.bert(
+            text_only_output = self.Qformer(
                 mod_input_ids[turn_i - 1],
                 query_embeds=prompt_tokens,
                 attention_mask=attention_mask,
@@ -223,6 +223,9 @@ class Blip2QformerCirAlignPrompt2(Blip2Base):
 
         cached_query_tokens = self.query_tokens.expand(batch_size, -1, -1)
 
+        mod_attention_mask = [attn.to(device) for attn in mod_attention_mask]
+        mod_input_ids = [input_id.to(device) for input_id in mod_input_ids]
+        
         images = [img.to(device, non_blocking=True) for img in images]
         image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in images]
         image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
@@ -254,7 +257,7 @@ class Blip2QformerCirAlignPrompt2(Blip2Base):
             query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(device)
             attention_mask = torch.cat([query_atts, mod_attention_mask[turn_i - 1]], dim=1)
 
-            fusion_output = self.Qformer.bert(
+            fusion_output = self.Qformer(
                 mod_input_ids[turn_i - 1],
                 query_embeds=query_tokens,
                 attention_mask=attention_mask,
@@ -263,7 +266,7 @@ class Blip2QformerCirAlignPrompt2(Blip2Base):
                 return_dict=True,
             )
 
-            text_output = self.Qformer.bert(
+            text_output = self.Qformer(
                 mod_input_ids[turn_i - 1],
                 query_embeds=fusion_output.last_hidden_state[:, : query_tokens.size(1), :],
                 attention_mask=attention_mask,
@@ -279,29 +282,31 @@ class Blip2QformerCirAlignPrompt2(Blip2Base):
 
             if turn_i == 1:
                 first_fusion_feats_all = F.normalize(self.ntm_proj(ntm_outputs[-1]), dim=-1)
+                first_sim_t2q = torch.matmul(first_fusion_feats_all.unsqueeze(1).unsqueeze(1), target_feats.permute(0, 2, 1)).squeeze()
+                first_sim_i2t, _ = first_sim_t2q.max(-1)
             elif turn_i == 2:
                 second_fusion_feats_all = F.normalize(self.ntm_proj(ntm_outputs[-1]), dim=-1)
+                second_sim_t2q = torch.matmul(second_fusion_feats_all.unsqueeze(1).unsqueeze(1), target_feats.permute(0, 2, 1)).squeeze()
+                second_sim_i2t, _ = second_sim_t2q.max(-1)
             if final_mask.sum() > 0:
                 selected_outputs = ntm_outputs[-1][final_mask]
                 projected_feats = F.normalize(self.ntm_proj(selected_outputs), dim=-1)
                 last_fusion_feats_all[final_mask] = projected_feats
-
-        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all, target_feats)
-        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all, target_feats)
-        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all, target_feats)
-        return first_sim_matrix, second_sim_matrix, last_sim_matrix
+                last_sim_t2q = torch.matmul(last_fusion_feats_all.unsqueeze(1).unsqueeze(1), target_feats.permute(0, 2, 1)).squeeze()
+                last_sim_i2t, _ = last_sim_t2q.max(-1)
+        return first_sim_i2t, second_sim_i2t, last_sim_i2t
 
     @torch.no_grad()
-    def extract_target_features(self, image):
+    def extract_target_features(self, images, cap_input_ids, cap_attention_mask):
         device = self.device
 
         with self.maybe_autocast():
-            image_embeds_frozen = self.ln_vision(self.visual_encoder(image))
+            image_embeds_frozen = self.ln_vision(self.visual_encoder(images))
         image_embeds_frozen = image_embeds_frozen.float()
         image_atts = torch.ones(image_embeds_frozen.size()[:-1], dtype=torch.long).to(device)
         query_tokens = self.query_tokens.expand(image_embeds_frozen.shape[0], -1, -1)
 
-        query_output = self.Qformer.bert(
+        query_output = self.Qformer(
             query_embeds=query_tokens,
             encoder_hidden_states=image_embeds_frozen,
             encoder_attention_mask=image_atts,

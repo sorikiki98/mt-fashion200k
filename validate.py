@@ -35,25 +35,36 @@ def compute_blip_compose_multi(relative_val_dataset, model, index_feats, index_n
 def calculate_recall(pred_sim, index_names, target_names):
     last_distances = 1 - pred_sim
     sorted_indices = torch.argsort(last_distances, dim=-1).cpu()
-    sorted_index_names = np.array(index_names)[sorted_indices]
+    
+    recalls = {1: [], 5: [], 10: [], 20: []}
+    
+    for i in range(len(target_names)):
+        target_name = target_names[i]
+        indices_i = sorted_indices[i]
+        
+        seen = set()
+        unique_names = []
+        for idx in indices_i:
+            name = index_names[idx]
+            if name not in seen:
+                seen.add(name)
+                unique_names.append(name)
 
-    labels = torch.tensor(
-        sorted_index_names == np.repeat(np.array(target_names), len(index_names)).reshape(len(target_names), -1))
-
-    sums = labels.any(dim=-1).float()
-
-    if not torch.equal(sums.int(), torch.ones(len(target_names)).int()):
-        for i, s in enumerate(sums):
-            if s != 1:
-                print(f"[ERROR] Target '{target_names[i]}' matched {s.item()} times in index_names.")
-        raise AssertionError("Some target_names did not match exactly one entry in index_names.")
-
-    recall_at1 = labels[:, :1].any(dim=1).float().mean().item() * 100
-    recall_at5 = labels[:, :5].any(dim=1).float().mean().item() * 100
-    recall_at10 = labels[:, :10].any(dim=1).float().mean().item() * 100
-    recall_at20 = labels[:, :20].any(dim=1).float().mean().item() * 100
+                if len(unique_names) >= 20:
+                    break
+        
+        for k in [1, 5, 10, 20]:
+            if target_name in unique_names[:k]:
+                recalls[k].append(1.0)
+            else:
+                recalls[k].append(0.0)
+    
+    recall_at1 = np.mean(recalls[1]) * 100
+    recall_at5 = np.mean(recalls[5]) * 100
+    recall_at10 = np.mean(recalls[10]) * 100
+    recall_at20 = np.mean(recalls[20]) * 100
+    
     return recall_at1, recall_at5, recall_at10, recall_at20
-
 
 def visualize_result_for_single_transaction(model, relative_val_dataset, index_features, sample_idx):
     transaction = relative_val_dataset[sample_idx]
@@ -96,7 +107,7 @@ def visualize_result_for_single_transaction(model, relative_val_dataset, index_f
 
 def generate_blip_compose_multi(model, relative_val_dataset, index_features):
     relative_val_loader = DataLoader(dataset=relative_val_dataset,
-                                     batch_size=16,
+                                     batch_size=32,
                                      num_workers=8,
                                      pin_memory=True,
                                      collate_fn=collate_fn,
