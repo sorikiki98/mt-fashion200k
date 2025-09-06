@@ -276,6 +276,124 @@ class Blip2QformerCirAlignPrompt(Blip2Base):
         target_feats = samples["target_feats"]
         n_turns = samples["n_turns"]  # (B,)
         images = samples["images"]  # (6, B, 3, 224, 224)
+
+        cap_input_ids = samples["cap_input_ids"]  # (6, B, 20)
+        cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 20)
+        mod_input_ids = samples["mod_input_ids"]  # (5, B, 40)
+        mod_attention_mask = samples["mod_attention_mask"]  # (5, B, 40)
+
+        batch_size = images[0].size(0)
+        probs = list(zip(*samples["probs"]))
+        probs = torch.tensor([list(row) for row in probs]).float().to(device)
+
+        cached_query_tokens = self.query_tokens.expand(batch_size, -1, -1)
+
+        images = [img.to(device, non_blocking=True) for img in images]
+        image_feats = [self.ln_vision(self.visual_encoder(img)).detach() for img in images]
+        image_atts_list = [torch.ones(f.size()[:-1], dtype=torch.long).to(f.device) for f in image_feats]
+
+        mod_attention_mask = [attn.to(device) for attn in mod_attention_mask]
+        cap_attention_mask = [attn.to(device) for attn in cap_attention_mask]
+
+        cap_input_ids = [input_id.to(device) for input_id in cap_input_ids]
+        mod_input_ids = [input_id.to(device) for input_id in mod_input_ids]
+
+        query_tokens = cached_query_tokens.clone()
+        query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(device)
+
+        ref_image_embeds = image_feats[0]
+        ref_image_atts = image_atts_list[0]
+        ref_cap_input_ids = cap_input_ids[0]
+        ref_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[0]], dim=1)
+
+        ref_fusion_output = self.Qformer(
+            ref_cap_input_ids,
+            query_embeds=query_tokens,
+            attention_mask=ref_cap_attn_mask,
+            encoder_hidden_states=ref_image_embeds,
+            encoder_attention_mask=ref_image_atts,
+            return_dict=True,
+        )
+        ref_fusion_processed = ref_fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
+
+        last_fusion_feats_all = torch.zeros(
+            batch_size, self.text_proj.out_features, device=device
+        )
+        first_fusion_feats_all = torch.zeros(
+            batch_size, self.text_proj.out_features, device=device
+        )
+        second_fusion_feats_all = torch.zeros(
+            batch_size, self.text_proj.out_features, device=device
+        )
+        for turn_i in range(1, self.max_turn + 1):
+            target_gates = torch.zeros(batch_size, 5, device=device)
+            valid_mask = (n_turns >= turn_i)
+            final_mask = (n_turns == turn_i)
+            if valid_mask.sum() == 0:
+                continue
+            target_gates[final_mask] = probs[final_mask]
+            not_final_mask = (n_turns != turn_i) & valid_mask
+            if not_final_mask.sum() > 0:
+                temp_target = torch.zeros(5, device=device)
+                temp_target[:turn_i - 1] = 1.0
+                target_gates[not_final_mask] = temp_target
+            turn_gates = target_gates  # (B, 5)
+            threshold = 0.5
+            binary_turn_gates = (turn_gates >= threshold).float()
+            fusion_processed = ref_fusion_processed
+
+            for turn_j in range(1, turn_i + 1):
+                query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(device)
+                mod_attn_mask = torch.cat([query_atts, mod_attention_mask[turn_j - 1]],
+                                          dim=1)
+                tar_cap_attn_mask = torch.cat([query_atts, cap_attention_mask[turn_j]],
+                                              dim=1)
+
+                text_output = self.Qformer(
+                    mod_input_ids[turn_j - 1],
+                    query_embeds=fusion_processed,  # [b, 32, 768]
+                    attention_mask=mod_attn_mask,
+                    return_dict=True,
+                )
+                query_tokens = fusion_processed
+
+                next_image_embeds = image_feats[turn_j]
+                next_image_atts = image_atts_list[turn_j]
+
+                next_fusion_output = self.Qformer(
+                    cap_input_ids[turn_j],
+                    query_embeds=query_tokens,
+                    attention_mask=tar_cap_attn_mask,
+                    encoder_hidden_states=next_image_embeds,
+                    encoder_attention_mask=next_image_atts,
+                    return_dict=True,
+                )
+                next_fusion_processed = next_fusion_output.last_hidden_state[:, : query_tokens.size(1), :]
+                alpha = binary_turn_gates[:, turn_j - 1].view(batch_size, 1, 1)  # (B, 1, 1)
+                fusion_processed = alpha * next_fusion_processed + (1 - alpha) * fusion_processed
+
+                if turn_j == turn_i == 1:
+                    first_fusion_feats_all = F.normalize(self.text_proj(text_output.last_hidden_state[:, 32, :]), dim=-1)
+                elif turn_j == turn_i == 2:
+                    second_fusion_feats_all = F.normalize(self.text_proj(text_output.last_hidden_state[:, 32, :]), dim=-1)
+                if turn_j == turn_i and final_mask.sum() > 0:
+                    selected_feats = text_output.last_hidden_state[:, 32, :][final_mask]
+                    projected_feats = F.normalize(self.text_proj(selected_feats), dim=-1)
+                    last_fusion_feats_all[final_mask] = projected_feats
+
+        first_sim_matrix = self.compute_distance_matrix(first_fusion_feats_all, target_feats)
+        second_sim_matrix = self.compute_distance_matrix(second_fusion_feats_all, target_feats)
+        last_sim_matrix = self.compute_distance_matrix(last_fusion_feats_all, target_feats)
+        return first_sim_matrix, second_sim_matrix, last_sim_matrix
+
+
+    @torch.no_grad()
+    def inference2(self, samples):
+        device = self.device
+
+        target_feats = samples["target_feats"]
+        n_turns = samples["n_turns"]  # (B,)
+        images = samples["images"]  # (6, B, 3, 224, 224)
         cap_input_ids = samples["cap_input_ids"]  # (6, B, 20)
         cap_attention_mask = samples["cap_attention_mask"]  # (6, B, 20)
         mod_input_ids = samples["mod_input_ids"]  # (5, B, 40)

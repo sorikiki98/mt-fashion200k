@@ -278,6 +278,7 @@ class ComposeDataset(Dataset):
                     "mod_attention_mask": all_mod_attn_mask,
                     "cap_input_ids": [ref_input_ids] + all_tar_input_ids,
                     "cap_attention_mask": [ref_attn_mask] + all_tar_attn_mask,
+                    "probs": probs,
                     "image_paths": [ref_path] + tar_paths,
                     "is_rollback": is_rollback,
                     "is_combination": is_combination,

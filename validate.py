@@ -10,6 +10,10 @@ import random
 from pathlib import Path
 from PIL import Image
 
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_ENABLE_INSTRUCTIONS'] = 'SSE4_2'
 
 def compute_blip_compose_multi(relative_val_dataset, model, index_feats, index_names):
     first_pred_sim, second_pred_sim, last_pred_sim, first_target_names, second_target_names, last_target_names, = (
@@ -33,38 +37,47 @@ def compute_blip_compose_multi(relative_val_dataset, model, index_feats, index_n
 
 
 def calculate_recall(pred_sim, index_names, target_names):
-    last_distances = 1 - pred_sim
-    sorted_indices = torch.argsort(last_distances, dim=-1).cpu()
-    
+    """PyTorch 연산 완전 제거한 NumPy 전용 버전"""
+
+    # PyTorch 텐서를 NumPy로 변환
+    if hasattr(pred_sim, 'detach'):
+        pred_sim = pred_sim.detach().cpu().numpy()
+    elif hasattr(pred_sim, 'numpy'):
+        pred_sim = pred_sim.numpy()
+
+    # 순수 NumPy 연산
+    last_distances = 1.0 - pred_sim
+
+    # NumPy argsort 사용 (더 안전)
+    sorted_indices = np.argsort(last_distances, axis=-1)
+
     recalls = {1: [], 5: [], 10: [], 20: []}
-    
+
     for i in range(len(target_names)):
         target_name = target_names[i]
         indices_i = sorted_indices[i]
-        
+
         seen = set()
         unique_names = []
-        for idx in indices_i:
-            name = index_names[idx]
-            if name not in seen:
-                seen.add(name)
-                unique_names.append(name)
 
-                if len(unique_names) >= 20:
-                    break
-        
+        # 인덱스 범위 안전 체크
+        for idx in indices_i:
+            if 0 <= idx < len(index_names):
+                name = index_names[idx]
+                if name not in seen:
+                    seen.add(name)
+                    unique_names.append(name)
+                    if len(unique_names) >= 20:
+                        break
+
         for k in [1, 5, 10, 20]:
             if target_name in unique_names[:k]:
                 recalls[k].append(1.0)
             else:
                 recalls[k].append(0.0)
-    
-    recall_at1 = np.mean(recalls[1]) * 100
-    recall_at5 = np.mean(recalls[5]) * 100
-    recall_at10 = np.mean(recalls[10]) * 100
-    recall_at20 = np.mean(recalls[20]) * 100
-    
-    return recall_at1, recall_at5, recall_at10, recall_at20
+
+    return (np.mean(recalls[1]) * 100, np.mean(recalls[5]) * 100,
+            np.mean(recalls[10]) * 100, np.mean(recalls[20]) * 100)
 
 def visualize_result_for_single_transaction(model, relative_val_dataset, index_features, sample_idx):
     transaction = relative_val_dataset[sample_idx]
@@ -107,7 +120,7 @@ def visualize_result_for_single_transaction(model, relative_val_dataset, index_f
 
 def generate_blip_compose_multi(model, relative_val_dataset, index_features):
     relative_val_loader = DataLoader(dataset=relative_val_dataset,
-                                     batch_size=32,
+                                     batch_size=16,
                                      num_workers=8,
                                      pin_memory=True,
                                      collate_fn=collate_fn,
@@ -140,6 +153,7 @@ def generate_blip_compose_multi(model, relative_val_dataset, index_features):
         combination_attention_mask = samples.get("combination_attention_mask")
 
         batch_size = images[0].size(0)
+        probs = samples.get("probs")
 
         for i in range(batch_size):
             turn = n_turns[i]
@@ -167,7 +181,8 @@ def generate_blip_compose_multi(model, relative_val_dataset, index_features):
                 "rollback_attention_mask": rollback_attention_mask,
                 "rollback_images": rollback_images,
                 "combination_input_ids": combination_input_ids,
-                "combination_attention_mask": combination_attention_mask
+                "combination_attention_mask": combination_attention_mask,
+                "probs": probs
             })
             first_similarity.append(batch_first_similarity)
             second_similarity.append(batch_second_similarity)
