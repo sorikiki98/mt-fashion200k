@@ -94,6 +94,7 @@ def visualize_result_for_single_transaction(model, relative_val_dataset, index_f
     cap_attention_mask = [mask.unsqueeze(0) for mask in cap_attention_mask]  # list (6, 1, 12)
     n_turns = torch.tensor([transaction["n_turns"]])  # list 5
     image_paths = transaction["image_paths"]  # list 6
+    probs = transaction["probs"]
 
     probs = transaction["probs"] # (5)
     probs = [[prob] for prob in probs]
@@ -125,7 +126,7 @@ def visualize_result_for_single_transaction(model, relative_val_dataset, index_f
 def generate_blip_compose_multi(model, relative_val_dataset, index_features):
     relative_val_loader = DataLoader(dataset=relative_val_dataset,
                                      batch_size=16,
-                                     num_workers=8,
+                                     num_workers=4,
                                      pin_memory=True,
                                      collate_fn=collate_fn,
                                      shuffle=False,
