@@ -211,7 +211,8 @@ def save_top_k_retrieval_results(
         top_k=20,
 ):
     # Create output directory
-    output_dir = Path(output_dir) / str(sample_idx)
+    output_root = Path(output_dir)  # e.g., 'visualization_sample'
+    output_dir = output_root / str(sample_idx)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     def save_turn_results(similarities, turn_name, target_name):
