@@ -81,21 +81,21 @@ def deploy(cfg, **kwargs):
         blip_model.eval()
         index_feats, index_names = extract_index_blip_fusion_features(classic_val_dataset, model)
 
-        first_sim, second_sim, last_sim, first_target, second_target, last_target = \
-        visualize_result_for_single_transaction(model, relative_val_dataset, index_feats, sample_idx)
-        save_top_k_retrieval_results(
-            first_similarity=first_sim,
-            second_similarity=second_sim,
-            last_similarity=last_sim,
-            first_target_name=first_target,
-            second_target_name=second_target,
-            last_target_name=last_target,
-            index_names=index_names,
-            output_dir="visualization_sample",
-            top_k=20
-        )
-
-
+        for idx in sample_idx:
+            first_sim, second_sim, last_sim, first_target, second_target, last_target = \
+            visualize_result_for_single_transaction(model, relative_val_dataset, index_feats, idx)
+            save_top_k_retrieval_results(
+                first_similarity=first_sim,
+                second_similarity=second_sim,
+                last_similarity=last_sim,
+                first_target_name=first_target,
+                second_target_name=second_target,
+                last_target_name=last_target,
+                index_names=index_names,
+                sample_idx=idx,
+                output_dir="visualization_sample",
+                top_k=20,
+            )
 
 if __name__ == '__main__':
     setup_seed(42)
@@ -107,4 +107,4 @@ if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     if config["dataset"] == "200k":
-        deploy(config, stage="convergence", device=device, sample_idx=2660)
+        deploy(config, stage="convergence", device=device, sample_idx=[2761, 2762, 2763, 2764])
