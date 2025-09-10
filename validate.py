@@ -95,6 +95,9 @@ def visualize_result_for_single_transaction(model, relative_val_dataset, index_f
     n_turns = torch.tensor([transaction["n_turns"]])  # list 5
     image_paths = transaction["image_paths"]  # list 6
 
+    probs = transaction["probs"] # (5)
+    probs = [[prob] for prob in probs]
+
     first_target_name = str(os.path.dirname(image_paths[1]))
     second_target_name = str(os.path.dirname(image_paths[2]))
     if n_turns == 3:
@@ -113,6 +116,7 @@ def visualize_result_for_single_transaction(model, relative_val_dataset, index_f
             "mod_attention_mask": mod_attention_mask,
             "cap_input_ids": cap_input_ids,
             "cap_attention_mask": cap_attention_mask,
+            "probs": probs
         })
 
     return first_similarity, second_similarity, last_similarity, first_target_name, second_target_name, last_target_name
